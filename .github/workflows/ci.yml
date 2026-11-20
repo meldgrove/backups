@@ -50,7 +50,8 @@ jobs:
       - run: npm audit --omit=dev --omit=optional --audit-level=high
 
   integration:
-    name: Integration tests (PostgreSQL 18, restic, rclone, S3)
+    # The ruleset of main requires this check by name: rename both together.
+    name: Integration tests (PostgreSQL 18, restic, S3)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
