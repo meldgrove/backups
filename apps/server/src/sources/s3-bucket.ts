@@ -31,7 +31,9 @@ export function remoteOf(source: Pick<SourceRow, "config">, secretAccessKey: str
     RCLONE_CONFIG_S3SOURCE_SECRET_ACCESS_KEY: secretAccessKey,
   };
   if (bucket.region) env.RCLONE_CONFIG_S3SOURCE_REGION = bucket.region;
-  return { env, path: `s3source:${bucket.bucket}${bucket.prefix ? `/${bucket.prefix}` : ""}` };
+  // The trailing slash makes the folder a folder: without it, an object with the folder's name
+  // would be copied instead of what is in the folder.
+  return { env, path: `s3source:${bucket.bucket}${bucket.prefix ? `/${bucket.prefix}/` : ""}` };
 }
 
 /** Counts the objects and their size; null when rclone failed (its errors say why). */
@@ -59,7 +61,17 @@ export async function testS3Bucket(source: SourceRow): Promise<SourceTest> {
       freeBytes: null,
     };
   }
-  const { counted } = await size(remote, AbortSignal.timeout(180_000));
+  const counting = AbortSignal.timeout(180_000);
+  const { counted, result } = await size(remote, counting);
+  if (!counted && !counting.aborted) {
+    return {
+      ok: false,
+      message: `The bucket refused: ${rcloneSummary(result.errors, `rclone exited with ${result.code}`)}`,
+      items: null,
+      bytes: null,
+      freeBytes: null,
+    };
+  }
   return {
     ok: true,
     message: !counted
@@ -104,7 +116,13 @@ export async function copyS3Bucket(
   if (options.signal.aborted) throw new Error("Stopped");
   const items = itemErrors(result, "Copying the bucket");
   return {
-    warnings: items.length > 0 ? [`${items.length} object(s) could not be copied`] : [],
+    // rclone deletes nothing after such errors: objects deleted from the bucket stay until a run without errors.
+    warnings:
+      items.length > 0
+        ? [
+            `${items.length} object(s) could not be copied; objects deleted from the bucket stay in this backup`,
+          ]
+        : [],
     errors: items.map((error) => `${error.object}: ${error.message}`.slice(0, 500)),
   };
 }

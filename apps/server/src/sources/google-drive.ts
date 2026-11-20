@@ -69,6 +69,8 @@ const SUMMARY = /^(Attempt \d+\/\d+ failed with \d+ errors|Failed to (sync|copy)
 /** A folder could not be listed: what the copy holds of it may be old, so the copy fails. */
 const LISTING = /error reading (source|destination)|couldn't list|directory not found/i;
 const DUPLICATE = /^Duplicate (object|directory) found in source/;
+/** After item errors, sync leaves deleted files in the copy: a notice about the copy, not an item. */
+const NOT_DELETING = /^not deleting (files|directories) as there were IO errors/;
 
 /** Reads rclone's JSON log (stderr, --use-json-log): the errors, and the items skipped as duplicates. */
 export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicates: string[] } {
@@ -88,11 +90,13 @@ export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicate
           object,
           kind: LISTING.test(message)
             ? "general"
-            : object
-              ? "item"
-              : SUMMARY.test(message)
-                ? "summary"
-                : "general",
+            : NOT_DELETING.test(message)
+              ? "summary"
+              : object
+                ? "item"
+                : SUMMARY.test(message)
+                  ? "summary"
+                  : "general",
         });
       }
     } catch {

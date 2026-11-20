@@ -101,8 +101,8 @@ restic restore <snapshot> --target ./restore
 
 The objects are under `./restore/data/staging/<source id>/`, without the
 folder's name if the source copied one folder. Copy them back into the
-bucket, for example with [rclone](https://rclone.org) `copy` or
-`aws s3 sync`.
+bucket, into that folder when the source copied one (for example
+`originals/`), with [rclone](https://rclone.org) `copy` or `aws s3 sync`.
 
 ## Personio
 

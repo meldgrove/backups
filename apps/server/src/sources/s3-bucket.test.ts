@@ -20,7 +20,7 @@ describe("S3 bucket", () => {
       RCLONE_CONFIG_S3SOURCE_ACCESS_KEY_ID: "LIBRARYREAD",
       RCLONE_CONFIG_S3SOURCE_SECRET_ACCESS_KEY: "library-secret",
     });
-    expect(remote.path).toBe("s3source:acme-library/originals");
+    expect(remote.path).toBe("s3source:acme-library/originals/");
     expect(remoteOf({ config: { ...config, region: "", prefix: "" } }, "x")).toMatchObject({
       path: "s3source:acme-library",
       env: expect.not.objectContaining({ RCLONE_CONFIG_S3SOURCE_REGION: expect.anything() }),

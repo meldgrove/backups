@@ -40,6 +40,8 @@ describe("the S3 bucket source, with rclone, restic and S3", () => {
     await put(`${folder}/library/originals/a.jpg`, "photo A");
     await put(`${folder}/library/originals/sub/b.pdf`, "document B");
     await put(`${folder}/other/c.txt`, "not in the folder");
+    // An object named like the folder: the source still copies what is in the folder.
+    await put(`${folder}/library`, "an object named like the folder");
 
     const body = {
       kind: "s3_bucket",
