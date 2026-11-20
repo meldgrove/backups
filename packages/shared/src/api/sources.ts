@@ -32,6 +32,8 @@ export const agentInfoSchema = z.object({
   appImage: z.string().nullable(),
   database: z.boolean().nullable(),
   volumes: z.array(z.string()),
+  /** Names of the app's settings that a restore needs from its .env (the backups hold no values). */
+  secrets: z.array(z.string()),
   /** The last characters of the token, to tell tokens apart. */
   tokenHint: z.string().nullable(),
 });

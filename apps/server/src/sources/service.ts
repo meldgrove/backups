@@ -149,6 +149,7 @@ export async function sourceViews(db: DbOrTx, rows: SourceRow[], now = new Date(
         appImage: row.agentInfo?.appImage || null,
         database: row.agentInfo?.database ?? null,
         volumes: row.agentInfo?.volumes ?? [],
+        secrets: row.agentInfo?.secrets ?? [],
         tokenHint: row.agentTokenHint,
       },
     };

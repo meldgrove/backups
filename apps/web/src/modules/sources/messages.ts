@@ -176,6 +176,8 @@ export const messages = defineMessages({
     agentDatabase: "Database",
     agentVolumes: "Volumes",
     agentToken: "Token",
+    agentSecrets:
+      "Keep apart from the backups: {names}. A restore needs them from the app's .env; the backups do not hold them.",
     tokenEnding: "ends in {hint}",
     none: "None",
     notSeen: "Not seen yet",

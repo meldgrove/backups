@@ -268,6 +268,9 @@ function AgentCard({
             ) : null}
           </Details>
         )}
+        {agent.secrets.length > 0 ? (
+          <p className="mt-4 text-sm">{t("agentSecrets", { names: agent.secrets.join(", ") })}</p>
+        ) : null}
       </CardContent>
     </Card>
   );

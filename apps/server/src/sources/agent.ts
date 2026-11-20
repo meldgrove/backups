@@ -122,6 +122,7 @@ export async function poll(db: Db, source: SourceRow, report: AgentPoll): Promis
         appImage: report.app.image,
         database: report.database,
         volumes: [...report.volumes].sort(),
+        secrets: [...new Set(report.app.secrets)].sort(),
       },
     })
     .where(eq(sources.id, source.id));

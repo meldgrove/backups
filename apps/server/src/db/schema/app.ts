@@ -11,6 +11,8 @@ export type StoredAgentInfo = {
   appImage: string;
   database: boolean;
   volumes: string[];
+  /** Names of the settings a restore needs from the app's .env; missing in rows from before it existed. */
+  secrets?: string[];
 };
 
 /** A snapshot of a successful run, as the dashboard shows it. */

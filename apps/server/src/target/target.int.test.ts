@@ -1,5 +1,8 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
+import { getDb } from "../db/client";
+import { sources } from "../db/schema";
 import { createUser, request, resetDatabase, setUpTarget, TEST_S3 } from "../test/helpers";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
@@ -60,15 +63,41 @@ describe("the target", () => {
   it("hands out the recovery kit, which opens the repository again after a reinstall", async () => {
     const admin = await createUser();
     await setUpTarget(admin);
-    await request("POST", "/api/v1/sources", {
-      userId: admin.id,
+    const app = async (name: string) =>
+      (
+        await request("POST", "/api/v1/sources", {
+          userId: admin.id,
+          body: {
+            kind: "app",
+            name,
+            schedule: { type: "daily", time: "02:00" },
+            retention: DEFAULT_RETENTION,
+          },
+        })
+      ).body as { source: { id: string }; token: string };
+    // The agent names the settings a restore needs (APP_SECRETS), never their values.
+    const handbook = await app("Handbook");
+    const polled = await request("POST", "/api/agent/v1/poll", {
+      token: handbook.token,
       body: {
-        kind: "app",
-        name: "Handbook",
-        schedule: { type: "daily", time: "02:00" },
-        retention: DEFAULT_RETENTION,
+        agent: { version: "0.2.0" },
+        app: { name: "handbook", image: "", secrets: ["ENCRYPTION_KEY", "AUTH_SECRET"] },
+        database: true,
+        volumes: [],
       },
     });
+    expect(polled.status).toBe(200);
+    const view = await request("GET", `/api/v1/sources/${handbook.source.id}`, { userId: admin.id });
+    expect(view.body.agent.secrets).toEqual(["AUTH_SECRET", "ENCRYPTION_KEY"]);
+    // An agent's report from before the names existed.
+    const logbook = await app("Logbook");
+    await getDb()
+      .update(sources)
+      .set({ agentInfo: { version: "0.1.0", appName: "logbook", appImage: "", database: true, volumes: [] } })
+      .where(eq(sources.id, logbook.source.id));
+    const older = await request("GET", `/api/v1/sources/${logbook.source.id}`, { userId: admin.id });
+    expect(older.body.agent.secrets).toEqual([]);
+
     const kit = await request("GET", "/api/v1/target/recovery-kit", { userId: admin.id });
     expect(kit.status).toBe(200);
     expect(kit.headers.get("content-disposition")).toMatch(
@@ -79,6 +108,10 @@ describe("the target", () => {
     expect(password).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(text).toContain(`AWS_SECRET_ACCESS_KEY=${TEST_S3.secretAccessKey}`);
     expect(text).toMatch(/source:[0-9a-f-]{36}: Handbook \(app\)/);
+    expect(text).toContain(
+      "A restore needs these settings from each app's .env:\n  Handbook: AUTH_SECRET, ENCRYPTION_KEY\n",
+    );
+    expect(text).not.toMatch(/ {2}Logbook:/);
 
     const confirmed = await request("POST", "/api/v1/target/recovery-kit/confirm", {
       userId: admin.id,

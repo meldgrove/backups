@@ -2,7 +2,7 @@ import type { Dashboard } from "@backups/shared/api/dashboard";
 import { DEFAULT_NOTIFICATIONS, type Notifications } from "@backups/shared/api/notifications";
 import type { Run } from "@backups/shared/api/runs";
 import { DEFAULT_RETENTION, DEFAULT_SCHEDULE } from "@backups/shared/api/schedule";
-import type { Source } from "@backups/shared/api/sources";
+import type { AgentInfo, Source } from "@backups/shared/api/sources";
 import type { Target } from "@backups/shared/api/target";
 
 /** Answers of the API for tests, with overrides. */
@@ -26,6 +26,20 @@ const base = {
   createdAt: "2026-11-01T10:00:00.000Z",
 };
 
+export function agentInfo(overrides: Partial<AgentInfo> = {}): AgentInfo {
+  return {
+    lastSeenAt: "2026-11-20T09:00:00.000Z",
+    version: "1.0.0",
+    appName: "handbook",
+    appImage: "ghcr.io/meldgrove/handbook:1.4.0",
+    database: true,
+    volumes: ["files"],
+    secrets: [],
+    tokenHint: "x9Yz",
+    ...overrides,
+  };
+}
+
 export function appSource(overrides: Partial<Extract<Source, { kind: "app" }>> = {}): Source {
   return {
     ...base,
@@ -33,15 +47,7 @@ export function appSource(overrides: Partial<Extract<Source, { kind: "app" }>> =
     name: "Handbook",
     kind: "app",
     config: {},
-    agent: {
-      lastSeenAt: "2026-11-20T09:00:00.000Z",
-      version: "1.0.0",
-      appName: "handbook",
-      appImage: "ghcr.io/meldgrove/handbook:1.4.0",
-      database: true,
-      volumes: ["files"],
-      tokenHint: "x9Yz",
-    },
+    agent: agentInfo(),
     ...overrides,
   };
 }

@@ -319,14 +319,16 @@ export async function confirmRecoveryKit(db: DbOrTx, actor: UserPrincipal) {
 
 /**
  * The recovery kit: everything the plain restic command line needs to
- * restore every source without this app, and which tag is which source.
+ * restore every source without this app, which tag is which source, and the
+ * names (never the values) of the apps' settings that a restore needs.
  */
 export function recoveryKitText(
   target: StoredTarget,
-  sources: { id: string; name: string; kind: string }[],
+  sources: { id: string; name: string; kind: string; agentInfo?: { secrets?: string[] } | null }[],
   createdAt: Date,
 ): string {
   const repository = repositoryOf(target)!;
+  const appSecrets = sources.filter((source) => source.kind === "app" && source.agentInfo?.secrets?.length);
   const lines = [
     "MELDGROVE BACKUPS: RECOVERY KIT",
     "",
@@ -356,6 +358,14 @@ export function recoveryKitText(
     ...sources.map((source) => `  source:${source.id}: ${source.name} (${source.kind})`),
     "  source:self: this app's own database (pg_dump)",
     "",
+    ...(appSecrets.length > 0
+      ? [
+          "Keys of the apps, kept apart from the backups (the backups do not hold them).",
+          "A restore needs these settings from each app's .env:",
+          ...appSecrets.map((source) => `  ${source.name}: ${source.agentInfo!.secrets!.join(", ")}`),
+          "",
+        ]
+      : []),
   ];
   return lines.join("\n");
 }
