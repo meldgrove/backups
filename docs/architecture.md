@@ -1,0 +1,110 @@
+# Architecture
+
+How Meldgrove Backups works inside. Rules for changing it are in
+`AGENTS.md`.
+
+```text
+app server(s)                                   Meldgrove Backups
+┌ app · postgres · volumes ┐                    ┌ web ── agents' uploads ──┐
+│ backup-agent ────────────┼── HTTPS (out) ────►│        restic backup ────┼──► S3 bucket
+└──────────────────────────┘                    │ worker: schedules        │    (restic repository:
+Google Drive ◄── rclone (read-only) ────────────┤  Drive, Personio, self  │     encrypted, deduplicated,
+Personio API ◄── fetch (read-only) ─────────────┤  upkeep, alerts         │     Object Lock)
+                                                └─ PostgreSQL ─────────────┘
+```
+
+## The engine: restic
+
+Everything goes into one restic repository in the target bucket. Each
+source's snapshots carry the tag `source:<source id>` (this app's own
+database: `source:self`) and the host `meldgrove-backups`; retention groups
+snapshots by tag. restic encrypts (AES-256), deduplicates (content-defined
+chunks, also across sources), compresses, and checks the repository.
+
+restic runs as a child process with the repository in its environment
+(`RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_*`), never in its arguments,
+and without the app's own environment. Its cache is in `DATA_DIR/cache`.
+Backups use `--retry-lock 30m`, the upkeep `--retry-lock 2h`, so the two
+wait for each other instead of failing.
+
+## Runs
+
+A run is one backup of a source, one backup of this app's database
+(`self`), or one upkeep (`maintenance`). Each has a status (`queued`,
+`running`, `succeeded`, `warning`, `failed`, `cancelled`), a log of steps and
+problems (at most 400 lines), and on success the snapshot ID and restic's
+summary.
+
+- **Planning** (worker, every 30 s): each enabled source whose `nextRunAt`
+  passed gets a queued run (unless one is queued or running); its next time
+  comes from its schedule (a cron expression in `TZ`). The daily upkeep
+  queues `self` and `maintenance`.
+- **Executing** (worker, one at a time): Google Drive and Personio backups,
+  `self`, and the upkeep. The upkeep starts only while no backup runs.
+- **App sources** wait for their agent. A queued run nobody picks up within
+  2 hours fails.
+- **Cancelling** a queued run ends it at once; a running one stops within
+  seconds (its process checks).
+- A process that restarts marks the runs it was running as failed.
+
+## App sources: the agent protocol
+
+The protocol is the contract in the
+[backup agent's README](https://github.com/meldgrove/backup-agent#protocol);
+the server side is `sources/agent.ts`.
+
+1. The agent polls `POST /api/agent/v1/poll` with its token (stored as
+   SHA-256). The answer records what it reports and hands out the source's
+   oldest queued run, unless the upkeep runs.
+2. On pickup, `web` starts `restic backup --stdin --stdin-filename
+backup.tar` and keeps an upload session in memory.
+3. The agent sends the tar stream in parts (`PUT …/parts/<n>`, 16 MiB, each
+   with its SHA-256). Parts are handled one at a time; each is answered only
+   after restic took it, so a slow bucket slows the agent down. A repeated
+   part (lost answer) is accepted once.
+4. `POST …/complete` brings the totals (parts, bytes, SHA-256 of the whole
+   stream). Only when they match does restic's input close and the snapshot
+   get written; otherwise restic is stopped and nothing is saved.
+5. `POST …/progress` keeps a long `pg_dump` alive; `POST …/fail` reports
+   that the agent could not produce the stream. No part or progress for 60
+   minutes ends the upload.
+
+## Google Drive and Personio
+
+Both are copied into `DATA_DIR/staging/<source id>` and then backed up with
+`restic backup <folder>`. The copy stays between runs, so each run fetches
+only what changed.
+
+- **Google Drive:** rclone with a remote defined in its environment
+  (`RCLONE_CONFIG_GDRIVE_*`: service account key, `impersonate`, scope
+  `drive.readonly`, shared drive or root folder, export formats), `rclone
+sync` per shared drive or folder. Errors about single files become
+  warnings; any other error fails the run before restic runs.
+- **Personio:** `sources/personio.ts`, with the v2 token (which v1
+  endpoints accept; the v1 token as a fallback), at most about seven
+  requests per second, retries on 429 and 5xx.
+
+## The target
+
+`target/target.ts` stores the bucket's address and keys and the repository
+password (encrypted with `ENCRYPTION_KEY`) in the `settings` table. **Test
+connection** opens the repository (`restic cat config`: ready, missing, or
+wrong password) and reads the bucket's versioning, Object Lock and lifecycle
+rules with three signed S3 requests (`target/bucket.ts`). **Create
+repository** runs `restic init` with a new random password; **Connect**
+takes the password of an existing one. The recovery kit is generated from
+the stored values on each download.
+
+## Alerts
+
+The worker compares each source's status with the last alert it sent
+(`sources.alert_state`): a new problem (failed, overdue) sends one email,
+the way back to OK another. The heartbeat URL is called every 15 minutes
+while there is no problem and the repository is ready.
+
+## Access
+
+Only admins sign in (Better Auth, generic OpenID Connect; `auth/sign-in.ts`
+checks `ADMIN_EMAILS` and `ADMIN_GROUPS` at every sign-in and keeps none of
+the provider's tokens). Every `/api/v1` route requires an admin; changes need
+the app's own `Origin`. Changes and downloads are in the audit log.

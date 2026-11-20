@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "26.13.0"
+  # The restic of the image (Dockerfile), for the integration tests.
+  RESTIC_VERSION: "0.19.1"
+  RESTIC_SHA256: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
+
+jobs:
+  checks:
+    name: Lint, types, unit tests, build, audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - name: Migrations match the schema
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain apps/server/drizzle)" ]; then
+            git status --porcelain apps/server/drizzle
+            echo "The schema in apps/server/src/db/schema has changes without a migration. Run: npm run db:generate"
+            exit 1
+          fi
+      - run: npm run build
+      # What the image installs (Dockerfile, prod-deps).
+      - run: npm audit --omit=dev --omit=optional --audit-level=high
+
+  integration:
+    name: Integration tests (PostgreSQL 18, restic, S3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: PostgreSQL, S3 (with Object Lock) and Mailpit
+        run: docker compose -f compose.dev.yaml up -d postgres s3 s3-setup mailpit
+      - name: restic
+        run: |
+          curl -fsSL -o /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
+          echo "${RESTIC_SHA256}  /tmp/restic.bz2" | sha256sum -c -
+          bunzip2 /tmp/restic.bz2
+          sudo install -m 0755 /tmp/restic /usr/local/bin/restic
+          restic version
+      - run: npm ci --no-audit --no-fund
+      - name: Wait for the bucket
+        run: |
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' backups-dev-s3-setup-1)" = "exited 0" ] && exit 0
+            sleep 2
+          done
+          docker compose -f compose.dev.yaml logs s3 s3-setup
+          exit 1
+      - run: npm run test:integration
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t backups:ci .
+      - name: The image runs as a non-root user
+        run: test "$(docker run --rm --entrypoint id backups:ci -u)" = "1000"
+      - name: The image has restic, rclone and pg_dump 18
+        run: |
+          docker run --rm --entrypoint sh backups:ci -c 'restic version && rclone version && $PG_DUMP_BINARY --version | grep -q " 18\."'
+      - name: The image starts its processes
+        run: |
+          docker run --rm --entrypoint node backups:ci --import /app/apps/server/dist/instrument.mjs -e "process.exit(0)"
