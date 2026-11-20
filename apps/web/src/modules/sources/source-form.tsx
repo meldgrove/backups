@@ -12,8 +12,8 @@ import { Label } from "@meldgrove/ui/label";
 import { NativeSelect, NativeSelectOption } from "@meldgrove/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@meldgrove/ui/radio-group";
 import { SecretField } from "@meldgrove/ui/secret-field";
+import { SecretInput } from "@meldgrove/ui/secret-input";
 import { Spinner } from "@meldgrove/ui/spinner";
-import { Textarea } from "@meldgrove/ui/textarea";
 import { HOURLY_STEPS, type Retention } from "@backups/shared/api/schedule";
 import { sourceInputSchema, type Source, type SourceKind } from "@backups/shared/api/sources";
 import { describedBy, FormErrors, SwitchField, TextField } from "@/components/form-fields";
@@ -326,12 +326,10 @@ function DriveCard({ values, change, errors, source }: Part & { source?: Source 
         </FieldSet>
         <Field data-invalid={keyError ? true : undefined}>
           <FieldLabel htmlFor="drive-key">{t("serviceAccountKey")}</FieldLabel>
-          <Textarea
+          <SecretInput
             id="drive-key"
-            rows={5}
-            spellCheck={false}
             autoComplete="off"
-            className="font-mono text-xs"
+            inputClassName="font-mono text-xs"
             placeholder={'{ "type": "service_account", … }'}
             value={values.serviceAccountKey}
             aria-invalid={keyError ? true : undefined}

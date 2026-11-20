@@ -1,8 +1,9 @@
-import type { ComponentProps, ReactNode } from "react";
+import type { ChangeEvent, ComponentProps, ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { Alert, AlertDescription } from "@meldgrove/ui/alert";
 import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "@meldgrove/ui/field";
 import { Input } from "@meldgrove/ui/input";
+import { SecretInput } from "@meldgrove/ui/secret-input";
 import { Switch } from "@meldgrove/ui/switch";
 
 /** The ids of a field's hint and error, for aria-describedby. */
@@ -10,7 +11,7 @@ export function describedBy(id: string, hint: unknown, error: unknown): string |
   return [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
 }
 
-/** A labelled text input with its hint and error. */
+/** A labelled text input with its hint and error. A password stays hidden until its eye button shows it. */
 export function TextField({
   id,
   label,
@@ -18,6 +19,7 @@ export function TextField({
   error,
   value,
   onChange,
+  type,
   ...input
 }: {
   id: string;
@@ -27,17 +29,18 @@ export function TextField({
   value: string;
   onChange: (value: string) => void;
 } & Omit<ComponentProps<"input">, "id" | "value" | "onChange">) {
+  const control = {
+    id,
+    value,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
+    "aria-invalid": error ? true : undefined,
+    "aria-describedby": describedBy(id, hint, error),
+    ...input,
+  };
   return (
     <Field data-invalid={error ? true : undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Input
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy(id, hint, error)}
-        {...input}
-      />
+      {type === "password" ? <SecretInput {...control} /> : <Input type={type} {...control} />}
       {hint ? <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription> : null}
       {error ? <FieldError id={`${id}-error`}>{error}</FieldError> : null}
     </Field>

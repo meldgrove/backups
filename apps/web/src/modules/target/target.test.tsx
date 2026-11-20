@@ -67,7 +67,11 @@ describe("target page", () => {
     expect(await screen.findByText("Wrong password")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Connect to an existing repository" }));
     const dialog = await screen.findByRole("dialog", { name: "Connect to an existing repository" });
-    await user.type(within(dialog).getByLabelText("Repository password"), "old secret");
+    const password = within(dialog).getByLabelText("Repository password");
+    expect(password).toHaveAttribute("type", "password");
+    await user.type(password, "old secret");
+    await user.click(within(dialog).getByRole("button", { name: "Show" }));
+    expect(password).toHaveAttribute("type", "text");
     await user.click(within(dialog).getByRole("button", { name: "Connect" }));
     expect(await within(dialog).findByText("This password does not open it")).toBeVisible();
     await user.click(within(dialog).getByRole("button", { name: "Connect" }));

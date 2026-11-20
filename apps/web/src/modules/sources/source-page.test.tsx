@@ -145,8 +145,9 @@ describe("source page", () => {
     await user.click(within(confirm).getByRole("button", { name: "Create token" }));
     const dialog = await screen.findByRole("dialog", { name: "Connect the app's backup agent" });
     expect(within(dialog).getByLabelText("Agent token")).toHaveValue("mgb_new");
+    expect(within(dialog).getByLabelText("Agent token")).toHaveAttribute("type", "password");
     expect(within(dialog).getByLabelText("Lines for the .env file")).toHaveTextContent(
-      "BACKUP_TOKEN=mgb_new",
+      "BACKUP_TOKEN=••••••••",
     );
   });
 
