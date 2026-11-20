@@ -1,0 +1,129 @@
+# Production on a Linux server (Debian, Ubuntu) with Docker Compose: the
+# release image as two processes, the web app (`web`: the interface and the
+# agents' uploads) and the worker (`worker`: schedules, Google Drive and
+# Personio backups, the daily upkeep, alerts), after a one-off migration,
+# plus the `updater` for automatic updates. Settings live in .env next to
+# this file (docs/configuration.md). Start it with:
+#
+#   docker compose up -d --pull always
+#
+# BACKUPS_VERSION in .env selects the release of ghcr.io/meldgrove/backups:
+# a version such as 0.1.0, or a series such as 0.1. With automatic updates
+# (docs/deployment.md), the server writes each version it installs there.
+#
+# Without a PostgreSQL of your own, add compose.postgres.yaml
+# (COMPOSE_FILE=compose.yaml:compose.postgres.yaml in .env).
+#
+# `web` listens on 127.0.0.1:3000 (BACKUPS_PORT changes the host port), for a
+# reverse proxy on the same server, such as Caddy, that terminates HTTPS; set
+# APP_URL to its public https URL. The proxy must accept request bodies of
+# 16 MiB (the agents' parts). The `data` volume holds the local copies of
+# Google Drive and Personio and restic's cache. On Coolify, use
+# compose.coolify.yaml (docs/coolify.md).
+
+x-image: &image ghcr.io/meldgrove/backups:${BACKUPS_VERSION:?Set BACKUPS_VERSION to a release, e.g. 0.1.0}
+
+# Every variable in .env reaches the containers (docs/configuration.md); the
+# required ones are checked here so a missing value stops the start.
+x-app-environment: &app-environment
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+  APP_URL: ${APP_URL:?Set APP_URL}
+  AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+  OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER}
+  OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID}
+  OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET}
+  # Schedules and the daily upkeep follow this time zone.
+  TZ: ${TZ:-UTC}
+  # The reverse proxy in front of the app sets X-Forwarded-For.
+  TRUST_PROXY: ${TRUST_PROXY:-true}
+  # The update button of admins asks the updater service below.
+  UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
+
+x-app: &app
+  image: *image
+  env_file:
+    - path: .env
+      required: false
+  environment: *app-environment
+
+services:
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    restart: "no"
+
+  web:
+    <<: *app
+    command: ["web"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - data:/data
+    ports:
+      # Only on the server itself, for the reverse proxy. BACKUPS_PORT picks
+      # another host port when 3000 is taken, e.g. by another app.
+      - "127.0.0.1:${BACKUPS_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/-/readyz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - data:/data
+    healthcheck:
+      # The worker touches the file every few seconds while it runs.
+      test:
+        - CMD
+        - node
+        - -e
+        - "const s = require('node:fs').statSync('/tmp/worker-heartbeat', { throwIfNoEntry: false }); process.exit(s && Date.now() - s.mtimeMs < 60000 ? 0 : 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Automatic updates and the update button of admins (docs/deployment.md).
+  # It installs nothing until the server runs `updater host-setup`: then
+  # admins choose Stable or Preview in the app, and for each installation the
+  # server writes the version into BACKUPS_VERSION, pulls it, runs
+  # `docker compose up --wait`, and goes back to the version before when it
+  # does not become healthy. Only the app reaches its API: never publish a
+  # port.
+  updater:
+    image: ghcr.io/meldgrove/updater:0.2
+    restart: unless-stopped
+    environment:
+      IMAGE: *image
+      VERSION_VARIABLE: BACKUPS_VERSION
+      # A stable release installs once it has been out this long; every
+      # automatic install only inside the window, if one is set (e.g.
+      # 02:00-05:00, in the time zone TZ).
+      COOLDOWN: ${UPDATE_COOLDOWN:-3d}
+      WINDOW: ${UPDATE_WINDOW:-}
+      TZ: ${TZ:-UTC}
+      # Only while the image is private: a GitHub user and a token with
+      # read:packages.
+      REGISTRY_USERNAME: ${UPDATE_REGISTRY_USERNAME:-}
+      REGISTRY_PASSWORD: ${UPDATE_REGISTRY_PASSWORD:-}
+    volumes:
+      - updater:/trigger
+
+volumes:
+  data:
+  updater:
