@@ -19,26 +19,39 @@ import { REPOSITORY_KEY, testTarget, type RepositoryHealth } from "../target/tar
 
 type RunRow = typeof runs.$inferSelect;
 
-/** Tags of deleted sources whose snapshots the next upkeep forgets. */
+/** Tags of deleted sources whose snapshots the next upkeep forgets, with the repository they are in. */
 const FORGET_KEY = "forget_tags";
+type ForgetRequest = { tag: string; repository: string };
 
-export async function queueForget(db: DbOrTx, tag: string) {
-  await updateSetting<string[]>(db, FORGET_KEY, (tags) => [...new Set([...(tags ?? []), tag])]);
+export async function queueForget(db: DbOrTx, tag: string, repository: string) {
+  await updateSetting<ForgetRequest[]>(db, FORGET_KEY, (requests) => [
+    ...(requests ?? []).filter((request) => request.tag !== tag || request.repository !== repository),
+    { tag, repository },
+  ]);
 }
 
-/** Forgets the snapshots of deleted sources (`queueForget`); a tag stays queued until that worked. */
+/**
+ * Forgets the snapshots of deleted sources (`queueForget`) in this
+ * repository; a request stays queued until that worked. Requests for another
+ * repository (the target moved) stay as they are.
+ */
 export async function forgetDeletedSources(db: DbOrTx, repository: Repository, signal?: AbortSignal) {
   const problems: string[] = [];
-  for (const tag of (await readSetting<string[]>(db, FORGET_KEY)) ?? []) {
+  const requests = (await readSetting<ForgetRequest[]>(db, FORGET_KEY)) ?? [];
+  for (const request of requests.filter((item) => item.repository === repository.url)) {
+    signal?.throwIfAborted();
     try {
-      const snapshots = await listSnapshots(repository, tag);
+      const snapshots = await listSnapshots(repository, request.tag, signal);
       await forgetSnapshots(
         repository,
         snapshots.map((item) => item.id),
         signal,
       );
-      await updateSetting<string[]>(db, FORGET_KEY, (tags) => (tags ?? []).filter((item) => item !== tag));
+      await updateSetting<ForgetRequest[]>(db, FORGET_KEY, (current) =>
+        (current ?? []).filter((item) => item.tag !== request.tag || item.repository !== request.repository),
+      );
     } catch (error) {
+      if (signal?.aborted) throw error;
       problems.push(`Forgetting the snapshots of a deleted source: ${(error as Error).message}`);
     }
   }

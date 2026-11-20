@@ -158,6 +158,7 @@ function collectOutput(child: ChildProcessWithoutNullStreams, options: RunOption
 
 /** Runs restic once and returns its exit code and output. Rejects only when restic cannot start. */
 export async function runRestic(repository: Repository, args: string[], options: RunOptions = {}) {
+  options.signal?.throwIfAborted();
   await mkdir(cacheDir(), { recursive: true });
   const child = spawnRestic(repository, args, options.env);
   child.stdin.end();
@@ -417,10 +418,15 @@ export type SnapshotInfo = {
   files: number | null;
 };
 
-export async function listSnapshots(repository: Repository, tag?: string): Promise<SnapshotInfo[]> {
+export async function listSnapshots(
+  repository: Repository,
+  tag?: string,
+  signal?: AbortSignal,
+): Promise<SnapshotInfo[]> {
   const args = ["snapshots", "--json", "--no-lock", ...(tag ? ["--tag", tag] : [])];
+  const timeout = AbortSignal.timeout(300_000);
   const result = await runOrThrow(repository, args, "The snapshots could not be listed", {
-    signal: AbortSignal.timeout(300_000),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   const raw = JSON.parse(result.stdout || "[]") as {
     id: string;

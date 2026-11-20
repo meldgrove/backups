@@ -210,8 +210,23 @@ export async function testTarget(db: DbOrTx): Promise<void> {
   await updateIfUnchanged(db, target, { repository, protection, ...created });
 }
 
+/**
+ * Creating and connecting a repository run one at a time (in the one web
+ * process), so that two admins never run `restic init` side by side.
+ */
+let repositoryChange: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const next = repositoryChange.then(work, work);
+  repositoryChange = next.catch(() => undefined);
+  return next;
+}
+
 /** Creates a new repository at the target, with a new password unless one is stored. */
-export async function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promise<void> {
+export function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promise<void> {
+  return oneAtATime(() => initializeTargetNow(db, actor));
+}
+
+async function initializeTargetNow(db: DbOrTx, actor: UserPrincipal): Promise<void> {
   await testTarget(db);
   const target = (await readTarget(db))!;
   if (target.repository.state === "ready")
@@ -256,7 +271,11 @@ export async function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promis
 }
 
 /** Uses an existing repository (e.g. after reinstalling the app) with its password. */
-export async function connectTarget(db: DbOrTx, password: string, actor: UserPrincipal): Promise<void> {
+export function connectTarget(db: DbOrTx, password: string, actor: UserPrincipal): Promise<void> {
+  return oneAtATime(() => connectTargetNow(db, password, actor));
+}
+
+async function connectTargetNow(db: DbOrTx, password: string, actor: UserPrincipal): Promise<void> {
   const target = await readTarget(db);
   if (!target) throw conflict("Save the target first", "no_target");
   const probe = await probeRepository({
@@ -286,9 +305,11 @@ export async function connectTarget(db: DbOrTx, password: string, actor: UserPri
 }
 
 export async function confirmRecoveryKit(db: DbOrTx, actor: UserPrincipal) {
-  const target = await readTarget(db);
-  if (!target?.password) throw conflict("Create or connect the repository first", "no_repository");
-  await writeSetting(db, TARGET_KEY, { ...target, recoveryKitConfirmedAt: new Date().toISOString() });
+  await db.transaction(async (tx) => {
+    const target = await readSettingForUpdate<StoredTarget>(tx, TARGET_KEY);
+    if (!target?.password) throw conflict("Create or connect the repository first", "no_repository");
+    await writeSetting(tx, TARGET_KEY, { ...target, recoveryKitConfirmedAt: new Date().toISOString() });
+  });
   await audit(db, actor, {
     action: "recovery_kit.confirm",
     entityType: "target",

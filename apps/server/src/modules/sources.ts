@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   SNAPSHOT_ID,
   sourceDeleteQuerySchema,
@@ -12,15 +12,15 @@ import {
   type SourceTest,
 } from "@backups/shared/api/sources";
 import { getDb } from "../db/client";
-import { sources } from "../db/schema";
+import { runs, sources } from "../db/schema";
 import type { AppEnv } from "../http/env";
 import { conflict, notFound } from "../http/errors";
 import { idParam, jsonBody, queryOf, requireAdmin } from "../http/middleware";
 import { audit } from "../core/audit";
 import { logger } from "../logger";
 import { activeRunOf, createRun, lockClaims, runView } from "../runs/service";
-import { dumpSnapshot, listSnapshots, sourceTag, type SnapshotInfo } from "../restic/restic";
-import { openRepository } from "../target/target";
+import { dumpSnapshot, listSnapshots, repositoryUrl, sourceTag, type SnapshotInfo } from "../restic/restic";
+import { openRepository, readTarget } from "../target/target";
 import { queueForget } from "../worker/maintenance";
 import { STREAM_FILENAME } from "../sources/agent";
 import { stagingDir, testDrive } from "../sources/google-drive";
@@ -77,13 +77,18 @@ router.delete("/sources/:id", async (c) => {
   // with the source its queued runs go (cascade).
   await db.transaction(async (tx) => {
     await lockClaims(tx);
-    const active = await activeRunOf(tx, id);
-    if (active?.status === "running") {
-      throw conflict("A backup of this source is running. Cancel it first.", "run_active");
-    }
+    const [running] = await tx
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.sourceId, id), eq(runs.status, "running")))
+      .limit(1);
+    if (running) throw conflict("A backup of this source is running. Cancel it first.", "run_active");
     await tx.delete(sources).where(eq(sources.id, id));
     // The next upkeep forgets the snapshots (it may wait for the repository).
-    if (snapshots === "forget") await queueForget(tx, sourceTag(id));
+    if (snapshots === "forget") {
+      const target = await readTarget(tx);
+      if (target) await queueForget(tx, sourceTag(id), repositoryUrl(target));
+    }
   });
   await rm(stagingDir(id), { recursive: true, force: true }).catch(() => undefined);
   await audit(db, actor, {
