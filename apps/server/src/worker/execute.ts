@@ -3,7 +3,14 @@ import { config } from "../config";
 import type { Db } from "../db/client";
 import { runs, sources } from "../db/schema";
 import { logger } from "../logger";
-import { appendLog, anyRunning, finishRun, isCancelRequested, type RunOutcome } from "../runs/service";
+import {
+  appendLog,
+  anyRunning,
+  finishRun,
+  isCancelRequested,
+  lockClaims,
+  type RunOutcome,
+} from "../runs/service";
 import { backupCommandOutput, backupDirectory, SELF_TAG, sourceTag, type Repository } from "../restic/restic";
 import { openRepository } from "../target/target";
 import { copyDrive, stagingDir } from "../sources/google-drive";
@@ -22,8 +29,9 @@ const LOCAL_KINDS = ["google_drive", "personio"];
  * waits while any backup runs (it needs the repository to itself).
  */
 export async function claimNextRun(db: Db): Promise<RunRow | null> {
-  const backupsRunning = await anyRunning(db, ["backup", "self"]);
   return db.transaction(async (tx) => {
+    await lockClaims(tx);
+    const backupsRunning = await anyRunning(tx, ["backup", "self"]);
     const localSources = tx
       .select({ id: sources.id })
       .from(sources)

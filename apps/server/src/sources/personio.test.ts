@@ -78,6 +78,7 @@ function fakePersonio(options: {
     }
     const download = /^\/v2\/document-management\/documents\/(\d+)\/download$/.exec(url.pathname);
     if (download) {
+      expect(new Headers(init?.headers).get("accept")).toBe("*/*");
       const item = Object.values(options.documents)
         .flat()
         .find((entry) => String(entry.id) === download[1]);
@@ -161,6 +162,27 @@ describe("the Personio export", () => {
     });
     expect(result.people).toBe(2);
     expect(result.warnings.join(" ")).toMatch(/could not be read/);
+  });
+
+  it("never empties a person's copy when Personio answers without the list", async () => {
+    const documents = { "7": [{ id: 101, name: "Contract.pdf", body: "contract" }] };
+    const fake = fakePersonio({ documents });
+    const options = {
+      signal: new AbortController().signal,
+      log: async () => undefined,
+      fetchImpl: fake.fetchImpl,
+    };
+    await exportPersonio(source(), options);
+    const broken = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).includes("/v2/document-management/documents?")
+        ? new Response(JSON.stringify({ unexpected: true }), {
+            headers: { "content-type": "application/json" },
+          })
+        : fake.fetchImpl(input, init)) as typeof fetch;
+    const result = await exportPersonio(source(), { ...options, fetchImpl: broken });
+    expect(result.warnings.join(" ")).toMatch(/could not be read/);
+    const ada = path.join(dataDir, "staging", source().id, "documents", "7 Lovelace, Ada");
+    expect(await readdir(ada)).toContain("101 Contract.pdf");
   });
 
   it("fails when the credential is wrong", async () => {

@@ -8,7 +8,7 @@ import { logger } from "../logger";
 import { AppError } from "../http/errors";
 import { sourceTag, startStreamBackup, type StreamBackup } from "../restic/restic";
 import { openRepository } from "../target/target";
-import { anyRunning, appendLog, finishRun, isCancelRequested } from "../runs/service";
+import { anyRunning, appendLog, finishRun, isCancelRequested, lockClaims } from "../runs/service";
 import type { SourceRow } from "./service";
 
 /*
@@ -85,9 +85,11 @@ async function recordProgress(db: Db, session: Session) {
     .where(eq(runs.id, session.runId));
 }
 
-/** Claims the oldest queued backup of the source; null when there is none. */
+/** Claims the oldest queued backup of the source; null when there is none or the upkeep runs. */
 async function claimJob(db: Db, sourceId: string) {
   return db.transaction(async (tx) => {
+    await lockClaims(tx);
+    if (await anyRunning(tx, ["maintenance"])) return null;
     const [run] = await tx
       .select({ id: runs.id })
       .from(runs)
@@ -136,7 +138,6 @@ export async function poll(db: Db, source: SourceRow, report: AgentPoll): Promis
       await abortSession(session, "failed", "The agent restarted during the upload");
     }
   }
-  if (await anyRunning(db, ["maintenance"])) return answer;
   const runId = await claimJob(db, source.id);
   if (!runId) return answer;
   try {
@@ -284,9 +285,12 @@ export async function recordJobProgress(db: Db, source: SourceRow, runId: string
 
 /** `POST /jobs/:id/fail`: the agent could not produce its stream. */
 export async function failJob(db: Db, source: SourceRow, runId: string, message: string) {
+  // `complete` was accepted (the answer may have been lost): the snapshot is being saved.
+  if (completed.get(runId)?.sourceId === source.id) return;
   const session = sessions.get(runId);
   const text = `The agent reported: ${message.trim() || "an unknown error"}`;
   if (session && session.sourceId === source.id) {
+    if (session.finishing) return;
     await abortSession(session, "failed", text);
     return;
   }

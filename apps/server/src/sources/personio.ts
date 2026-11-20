@@ -148,14 +148,16 @@ export class PersonioClient {
   }
 
   /** GET with the bearer token; v1 paths fall back to the v1 token once. */
-  async get(pathOrUrl: string): Promise<Response> {
+  async get(pathOrUrl: string, accept = "application/json"): Promise<Response> {
     const v1 = /\/v1\//.test(pathOrUrl);
     let response = await this.send(pathOrUrl, {
-      headers: { authorization: `Bearer ${await this.v2Token()}` },
+      headers: { authorization: `Bearer ${await this.v2Token()}`, accept },
     });
     if (v1 && (response.status === 401 || response.status === 403)) {
       await response.body?.cancel();
-      response = await this.send(pathOrUrl, { headers: { authorization: `Bearer ${await this.v1Token()}` } });
+      response = await this.send(pathOrUrl, {
+        headers: { authorization: `Bearer ${await this.v1Token()}`, accept },
+      });
     }
     return response;
   }
@@ -174,12 +176,17 @@ export class PersonioClient {
     return (await response.json()) as T;
   }
 
+  /** A list's items; an answer without the list is an error, never an empty list (which would empty the copy). */
+  private list<T>(body: Record<string, unknown> | null, field: string, what: string): T[] {
+    const items = body?.[field];
+    if (!Array.isArray(items)) throw new PersonioError(`Personio sent an unexpected answer to ${what}`);
+    return items as T[];
+  }
+
   async attributes(): Promise<Attribute[]> {
-    const body = await this.json<{ data?: Attribute[] }>(
-      "/v1/company/employees/attributes",
-      "list the attributes",
-    );
-    return (body.data ?? []).filter((attribute) => typeof attribute.key === "string");
+    const what = "list the attributes";
+    const body = await this.json<Record<string, unknown>>("/v1/company/employees/attributes", what);
+    return this.list<Attribute>(body, "data", what).filter((attribute) => typeof attribute.key === "string");
   }
 
   /** Every person (v1), with the given attributes; page by page, without duplicates. */
@@ -192,7 +199,7 @@ export class PersonioClient {
         data?: { attributes?: Record<string, unknown> }[];
         metadata?: { total_elements?: number; total_pages?: number };
       }>(`/v1/company/employees?${query}`, "list the employees");
-      const items = body.data ?? [];
+      const items = this.list<{ attributes?: Record<string, unknown> }>(body, "data", "list the employees");
       for (const item of items) {
         const attributes = item.attributes ?? {};
         const id = plainValue(attributes.id);
@@ -217,7 +224,7 @@ export class PersonioClient {
     for (let page = 0; next && page < 1000; page += 1) {
       const body: { _data?: Record<string, unknown>[]; _meta?: { links?: { next?: { href?: string } } } } =
         await this.json(next, "list documents");
-      for (const raw of body._data ?? []) {
+      for (const raw of this.list<Record<string, unknown>>(body, "_data", "list documents")) {
         items.push({
           ...(raw as object),
           id: String(raw.id),
@@ -237,7 +244,7 @@ export class PersonioClient {
   }
 
   async download(documentId: string): Promise<Response> {
-    return this.get(`/v2/document-management/documents/${encodeURIComponent(documentId)}/download`);
+    return this.get(`/v2/document-management/documents/${encodeURIComponent(documentId)}/download`, "*/*");
   }
 }
 

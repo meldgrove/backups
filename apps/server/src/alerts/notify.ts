@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import nodemailer from "nodemailer";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -125,11 +126,10 @@ export async function sendMail(db: DbOrTx, mail: Mail, options: { evenWhenOff?: 
 /** Calls the heartbeat URL. */
 export async function callHeartbeat(url: string): Promise<{ ok: boolean; message: string | null }> {
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      signal: AbortSignal.timeout(15_000),
-      redirect: "follow",
-    });
+    // The URL's path is its secret: no trace span (Sentry) records it.
+    const response = await Sentry.suppressTracing(() =>
+      fetch(url, { method: "GET", signal: AbortSignal.timeout(15_000), redirect: "follow" }),
+    );
     await response.body?.cancel();
     return response.ok ? { ok: true, message: null } : { ok: false, message: `HTTP ${response.status}` };
   } catch (error) {
@@ -180,16 +180,24 @@ export async function checkAlerts(db: Db, now = new Date()) {
     }
   }
 
-  const upkeep = await latestRun(db, "maintenance");
-  const upkeepFailed = upkeep?.status === "failed";
-  if (upkeepFailed) healthy = false;
-  const systemAlert = await readSetting<{ runId: string | null }>(db, SYSTEM_ALERT_KEY);
-  if (upkeepFailed && systemAlert?.runId !== upkeep.id) {
-    await sendSafely(db, {
-      subject: "Repository upkeep failed",
-      text: `The daily upkeep of the backup repository failed:\n\n${upkeep.error ?? ""}\n\nRun: ${config().APP_URL}/runs/${upkeep.id}`,
+  // The upkeep and this app's own backup: one alert per failed run.
+  const systemAlert = (await readSetting<Record<string, string | null>>(db, SYSTEM_ALERT_KEY)) ?? {};
+  for (const [kind, name] of [
+    ["maintenance", "The daily upkeep of the backup repository"],
+    ["self", "The backup of this app's own database"],
+  ] as const) {
+    const run = await latestRun(db, kind);
+    if (run?.status !== "failed") continue;
+    healthy = false;
+    if (systemAlert[kind] === run.id) continue;
+    const sent = await sendSafely(db, {
+      subject: `${name} failed`,
+      text: `${name} failed:\n\n${run.error ?? ""}\n\nRun: ${config().APP_URL}/runs/${run.id}`,
     });
-    await writeSetting(db, SYSTEM_ALERT_KEY, { runId: upkeep.id });
+    if (sent) {
+      systemAlert[kind] = run.id;
+      await writeSetting(db, SYSTEM_ALERT_KEY, systemAlert);
+    }
   }
 
   const target = await readTarget(db);
@@ -204,16 +212,20 @@ export async function checkAlerts(db: Db, now = new Date()) {
   }
 }
 
-async function sendSafely(db: Db, mail: Mail) {
+/** Sends an alert; false when it could not be sent (it is tried again at the next check). */
+async function sendSafely(db: Db, mail: Mail): Promise<boolean> {
   try {
     await sendMail(db, mail);
+    return true;
   } catch (error) {
     logger.warn({ err: error }, "alert email not sent");
+    return false;
   }
 }
 
+/** Sends a source's alert and records it as sent; nothing is recorded when sending failed. */
 async function notify(db: Db, sourceId: string, state: "failed" | "overdue" | null, mail: Mail) {
-  await sendSafely(db, mail);
+  if (!(await sendSafely(db, mail))) return;
   await db
     .update(sources)
     .set({ alertState: state, alertedAt: sql`now()` })

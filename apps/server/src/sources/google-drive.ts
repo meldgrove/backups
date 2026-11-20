@@ -57,28 +57,43 @@ export function folderName(label: string): string {
   );
 }
 
-type RcloneResult = { code: number | null; stdout: string; errors: RcloneError[] };
-/** An error rclone logged; `object` names the file or folder, when it is about one. */
-export type RcloneError = { message: string; object: string | null };
+type RcloneResult = { code: number | null; stdout: string; errors: RcloneError[]; duplicates: string[] };
+/**
+ * An error rclone logged. `item`: about one file or folder (`object`);
+ * `summary`: rclone's count of the item errors at the end of a try;
+ * `general`: anything else (sign-in, listing the root, the copy itself).
+ */
+export type RcloneError = { message: string; object: string | null; kind: "item" | "summary" | "general" };
 
-/** Reads rclone's JSON log (stderr, --use-json-log): the errors. */
-export function parseRcloneLog(text: string): RcloneError[] {
+const SUMMARY = /^(Attempt \d+\/\d+ failed with \d+ errors|Failed to (sync|copy)(:| with \d+ errors))/;
+const DUPLICATE = /^Duplicate (object|directory) found in source/;
+
+/** Reads rclone's JSON log (stderr, --use-json-log): the errors, and the items skipped as duplicates. */
+export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicates: string[] } {
   const errors: RcloneError[] = [];
+  const duplicates: string[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line) as { level?: string; msg?: string; object?: string };
-      if (entry.level === "error" || entry.level === "critical") {
+      const message = redact(String(entry.msg ?? "error")).slice(0, 500);
+      const object = entry.object || null;
+      // Drive allows several files with one name in a folder; rclone copies only one of them.
+      if (DUPLICATE.test(message)) duplicates.push(object ?? message);
+      else if (entry.level === "error" || entry.level === "critical") {
         errors.push({
-          message: redact(String(entry.msg ?? "error")).slice(0, 500),
-          object: entry.object || null,
+          message,
+          object,
+          kind: object ? "item" : SUMMARY.test(message) ? "summary" : "general",
         });
       }
     } catch {
-      if (/error|failed/i.test(line)) errors.push({ message: redact(line).slice(0, 500), object: null });
+      if (/error|failed/i.test(line)) {
+        errors.push({ message: redact(line).slice(0, 500), object: null, kind: "general" });
+      }
     }
   }
-  return errors;
+  return { errors, duplicates };
 }
 
 function rclone(args: string[], env: Record<string, string>, signal?: AbortSignal): Promise<RcloneResult> {
@@ -120,7 +135,7 @@ function rclone(args: string[], env: Record<string, string>, signal?: AbortSigna
     });
     child.once("close", (code) => {
       signal?.removeEventListener("abort", abort);
-      resolve({ code, stdout, errors: parseRcloneLog(stderr) });
+      resolve({ code, stdout, ...parseRcloneLog(stderr) });
     });
   });
 }
@@ -142,7 +157,7 @@ export async function freeBytes(directory: string): Promise<number | null> {
 
 /** What went wrong, in one line: the first error that is not about a single file, else the first. */
 function summary(errors: RcloneError[], fallback: string) {
-  return (errors.find((error) => !error.object) ?? errors[0])?.message ?? fallback;
+  return (errors.find((error) => error.kind === "general") ?? errors[0])?.message ?? fallback;
 }
 
 /** Can the service account reach the drive or folders, and how much is there? */
@@ -245,16 +260,21 @@ export async function copyDrive(
     // Folders: the copy holds one folder per configured folder; leave the others alone.
     const result = await rclone(args, remote.env, options.signal);
     if (options.signal.aborted) throw new Error("Stopped");
-    const general = result.errors.filter((error) => !error.object);
-    if (result.code !== 0 && (general.length > 0 || result.errors.length === 0)) {
+    const general = result.errors.filter((error) => error.kind === "general");
+    const items = result.errors.filter((error) => error.kind === "item");
+    if (result.code !== 0 && (general.length > 0 || items.length === 0)) {
       throw new Error(
         `Google Drive copy failed: ${summary(result.errors, `rclone exited with ${result.code}`)}`,
       );
     }
-    for (const error of result.errors) errors.push(`${error.object ?? ""}: ${error.message}`.slice(0, 500));
-    if (result.errors.length > 0) {
+    const where = remote.target ? ` in ${remote.target}` : "";
+    for (const error of items) errors.push(`${error.object}: ${error.message}`.slice(0, 500));
+    if (items.length > 0) warnings.push(`${items.length} item(s) could not be copied${where}`);
+    for (const name of result.duplicates)
+      errors.push(`${name}: skipped, another item has the same name`.slice(0, 500));
+    if (result.duplicates.length > 0) {
       warnings.push(
-        `${result.errors.length} item(s) could not be copied${remote.target ? ` from ${remote.target}` : ""}`,
+        `${result.duplicates.length} item(s) skipped${where}: another item in the same folder has the same name; rename them in Drive`,
       );
     }
   }

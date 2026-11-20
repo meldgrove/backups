@@ -115,11 +115,14 @@ function spawnRestic(repository: Repository, args: string[], env: Record<string,
   });
 }
 
-/** Stops a restic process: SIGINT first (restic removes its locks), SIGKILL after 30 seconds. */
-function stop(child: ChildProcessWithoutNullStreams) {
+/**
+ * Stops a restic process: SIGINT first (restic saves no snapshot and removes
+ * its locks), SIGKILL after `killAfterMs`.
+ */
+function stop(child: ChildProcessWithoutNullStreams, killAfterMs = 30_000) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   child.kill("SIGINT");
-  const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
+  const timer = setTimeout(() => child.kill("SIGKILL"), killAfterMs);
   timer.unref();
   child.once("exit", () => clearTimeout(timer));
 }
@@ -393,8 +396,11 @@ export async function startStreamBackup(
       return reader.result(result.code, result.stderr);
     },
     abort() {
-      child.stdin.destroy();
-      stop(child);
+      // Never close restic's input first: at the end of its input, restic saves
+      // what it read as a snapshot. Interrupt it (it cannot react while it
+      // waits for input, so kill it soon), and close the input once it ended.
+      child.once("exit", () => child.stdin.destroy());
+      stop(child, 2_000);
     },
     ended: exited.then(() => undefined),
   };

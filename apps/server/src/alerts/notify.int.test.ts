@@ -71,6 +71,18 @@ describe("alerts", () => {
       finishedAt: new Date(),
       error: "The agent reported: pg_dump failed",
     });
+    // The mail server is down: nothing counts as sent, so the next check tries again.
+    await request("PUT", "/api/v1/notifications", {
+      userId: admin.id,
+      body: { email: { ...email, port: 1 }, heartbeatUrl: "", notifyRecovery: true },
+    });
+    await checkAlerts(getDb());
+    const [unsent] = await getDb().select().from(sources).where(eq(sources.id, sourceId));
+    expect(unsent!.alertState).toBeNull();
+    await request("PUT", "/api/v1/notifications", {
+      userId: admin.id,
+      body: { email, heartbeatUrl: "", notifyRecovery: true },
+    });
     await checkAlerts(getDb());
     await checkAlerts(getDb());
     const failed = (await mails()).filter((mail) => mail.Subject.includes("Backup failed: Helpdesk"));

@@ -78,13 +78,6 @@ export async function appendLog(db: DbOrTx, runId: string, ...lines: string[]) {
   await db.update(runs).set({ log }).where(eq(runs.id, runId));
 }
 
-export async function startRun(db: DbOrTx, runId: string) {
-  await db
-    .update(runs)
-    .set({ status: "running", startedAt: sql`now()` })
-    .where(eq(runs.id, runId));
-}
-
 export type RunOutcome =
   | { status: "succeeded" | "warning"; snapshotId: string | null; stats: RunStats | null; warnings: string[] }
   | { status: "failed" | "cancelled"; error: string; warnings?: string[] };
@@ -142,6 +135,15 @@ export async function requestCancel(db: DbOrTx, runId: string) {
 export async function isCancelRequested(db: DbOrTx, runId: string): Promise<boolean> {
   const [row] = await db.select({ cancel: runs.cancelRequested }).from(runs).where(eq(runs.id, runId));
   return row?.cancel ?? true;
+}
+
+/**
+ * Serializes the claims of runs (the worker's and the agents'), so that an
+ * upkeep and a backup never both start: each claim checks what runs and
+ * claims inside one transaction holding this lock.
+ */
+export async function lockClaims(tx: DbOrTx) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('backups.claims'))`);
 }
 
 /** Whether any run of these kinds is running (upkeep waits for backups, agents wait for upkeep). */

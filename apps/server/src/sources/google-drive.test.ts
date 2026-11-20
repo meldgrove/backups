@@ -51,16 +51,40 @@ describe("Google Drive", () => {
     expect(folderName("\u0000x")).toBe("x");
   });
 
-  it("reads rclone's errors, with and without the file they are about", () => {
+  it("tells errors about single items from rclone's summaries and from general errors", () => {
     const log = [
       '{"level":"notice","msg":"hello"}',
-      '{"level":"error","msg":"Failed to copy: googleapi: Error 403: rate limit","object":"a/b.pdf"}',
-      '{"level":"error","msg":"couldn\'t list directory: token https://user:secret@x invalid"}',
+      '{"level":"error","msg":"Failed to copy: googleapi: Error 403: cannotDownloadFile","object":"a/b.pdf"}',
+      '{"level":"error","msg":"Attempt 3/3 failed with 1 errors and: googleapi: Error 403: cannotDownloadFile"}',
+      '{"level":"critical","msg":"Failed to sync: googleapi: Error 403: cannotDownloadFile"}',
+      '{"level":"notice","msg":"Duplicate object found in source - ignoring","object":"Board/minutes.docx"}',
+      '{"level":"critical","msg":"Failed to create file system: token https://user:secret@x invalid"}',
       "",
     ].join("\n");
-    expect(parseRcloneLog(log)).toEqual([
-      { message: "Failed to copy: googleapi: Error 403: rate limit", object: "a/b.pdf" },
-      { message: "couldn't list directory: token https://***@x invalid", object: null },
-    ]);
+    expect(parseRcloneLog(log)).toEqual({
+      errors: [
+        {
+          message: "Failed to copy: googleapi: Error 403: cannotDownloadFile",
+          object: "a/b.pdf",
+          kind: "item",
+        },
+        {
+          message: "Attempt 3/3 failed with 1 errors and: googleapi: Error 403: cannotDownloadFile",
+          object: null,
+          kind: "summary",
+        },
+        {
+          message: "Failed to sync: googleapi: Error 403: cannotDownloadFile",
+          object: null,
+          kind: "summary",
+        },
+        {
+          message: "Failed to create file system: token https://***@x invalid",
+          object: null,
+          kind: "general",
+        },
+      ],
+      duplicates: ["Board/minutes.docx"],
+    });
   });
 });

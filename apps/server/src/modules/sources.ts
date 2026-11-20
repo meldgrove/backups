@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { Hono } from "hono";
-import { stream } from "hono/streaming";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   SNAPSHOT_ID,
   sourceDeleteQuerySchema,
@@ -12,7 +12,7 @@ import {
   type SourceTest,
 } from "@backups/shared/api/sources";
 import { getDb } from "../db/client";
-import { sources } from "../db/schema";
+import { runs, sources } from "../db/schema";
 import type { AppEnv } from "../http/env";
 import { conflict, notFound } from "../http/errors";
 import { idParam, jsonBody, queryOf, requireAdmin } from "../http/middleware";
@@ -72,9 +72,17 @@ router.delete("/sources/:id", async (c) => {
   const { snapshots } = queryOf(c, sourceDeleteQuerySchema);
   const db = getDb();
   const row = await getSourceRow(db, id);
+  // First stop new runs: nothing may claim one while the snapshots are forgotten.
+  await db.update(sources).set({ enabled: false }).where(eq(sources.id, id));
+  await db
+    .update(runs)
+    .set({ status: "cancelled", finishedAt: sql`now()`, error: "The source is being deleted" })
+    .where(and(eq(runs.sourceId, id), eq(runs.status, "queued")));
   const active = await activeRunOf(db, id);
-  if (active?.status === "running")
+  if (active?.status === "running") {
+    await db.update(sources).set({ enabled: row.enabled }).where(eq(sources.id, id));
     throw conflict("A backup of this source is running. Cancel it first.", "run_active");
+  }
   let forgotten = 0;
   if (snapshots === "forget") {
     const repository = await openRepository(db);
@@ -196,17 +204,21 @@ router.get("/sources/:id/snapshots/:snapshot/download", async (c) => {
   c.header("content-type", app ? "application/x-tar" : "application/zip");
   c.header("content-disposition", `attachment; filename="${filename}"`);
   c.header("cache-control", "no-store");
-  return stream(c, async (out) => {
-    out.onAbort(() => {
-      dump.stream.destroy();
-    });
-    for await (const chunk of dump.stream) await out.write(chunk as Uint8Array);
-    await dump.done.catch((error: unknown) => {
-      logger.warn({ err: error, sourceId: row.id }, "snapshot download incomplete");
-      // The browser sees a broken download rather than a complete-looking file.
-      throw error;
-    });
-  });
+  // restic's output as it comes; when restic fails, the body breaks off with an
+  // error, so the browser never sees a truncated file as a complete download.
+  const body = (Readable.toWeb(dump.stream) as ReadableStream<Uint8Array>).pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      async flush(controller) {
+        try {
+          await dump.done;
+        } catch (error) {
+          logger.warn({ err: error, sourceId: row.id }, "snapshot download incomplete");
+          controller.error(error);
+        }
+      },
+    }),
+  );
+  return c.body(body);
 });
 
 export default router;

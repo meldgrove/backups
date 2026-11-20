@@ -12,7 +12,7 @@ export const AGENT_TOKEN = /^mgb_[A-Za-z0-9_-]{43}$/;
 
 export const agentPollSchema = z.object({
   agent: z.object({ version: z.string().max(100) }),
-  app: z.object({ name: z.string().max(100).default(""), image: z.string().max(300).default("") }),
+  app: z.object({ name: z.string().max(200).default(""), image: z.string().max(300).default("") }),
   database: z.boolean(),
   volumes: z.array(z.string().max(200)).max(100),
   /** Sent by `backup-agent check`: answer as usual, but hand out no job. */

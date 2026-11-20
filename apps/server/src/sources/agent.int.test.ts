@@ -134,6 +134,15 @@ describe("the agent protocol, with restic and S3", () => {
       body: totals,
     });
     expect(complete.status).toBe(202);
+    // A `fail` after an accepted `complete` (the agent lost the answer and stopped) changes nothing.
+    expect(
+      (
+        await request("POST", `/api/agent/v1/jobs/${jobId}/fail`, {
+          token: source.token,
+          body: { message: "The agent was stopped" },
+        })
+      ).status,
+    ).toBe(204);
     // A repeated `complete` (lost answer) is accepted again.
     expect(
       (await request("POST", `/api/agent/v1/jobs/${jobId}/complete`, { token: source.token, body: totals }))

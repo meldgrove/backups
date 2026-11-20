@@ -105,15 +105,16 @@ Steps:
         "Expiration":{"ExpiredObjectDeleteMarker":true}}]}'
    ```
 
-   - **Old versions** (what restic deleted) are removed 31 days after they
-     were replaced: one day after their lock ends. Without this rule,
-     Hetzner keeps them, and bills them, forever. Hetzner supports only
+   - **Old versions** (what restic deleted) are removed 31 days after restic
+     deleted them, and never while their lock (30 days from their upload)
+     lasts. Without this rule, Hetzner keeps them, and bills them, forever. Hetzner supports only
      `NoncurrentDays` here, no "keep the last N versions".
    - **Delete markers** that are left alone are removed.
    - **Incomplete uploads** are removed after 7 days.
 
-   Deleted data thus stays in the bucket for up to about 60 days. A longer
-   lock protects longer and costs more storage.
+   Deleted data thus stays in the bucket for 31 days after restic deletes
+   it. Longer periods protect longer and cost more storage; keep
+   `NoncurrentDays` longer than the lock.
 
 5. In the app, under **Settings → Target**: endpoint
    `https://hel1.your-objectstorage.com`, region `hel1`, the bucket, the

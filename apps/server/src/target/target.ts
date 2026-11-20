@@ -133,6 +133,32 @@ export async function saveTarget(
   });
 }
 
+/** The same bucket, keys and password: results of a check of `a` still apply to `b`. */
+const sameTarget = (a: StoredTarget, b: StoredTarget | null) =>
+  b !== null &&
+  repositoryUrl(a) === repositoryUrl(b) &&
+  a.accessKeyId === b.accessKeyId &&
+  a.secretAccessKey === b.secretAccessKey &&
+  a.password === b.password;
+
+/**
+ * Stores a change made after network calls, on the target as it is now, and
+ * only when it is still the target those calls used (an admin may have
+ * changed it meanwhile).
+ */
+async function updateIfUnchanged(
+  db: DbOrTx,
+  used: StoredTarget,
+  change: Partial<StoredTarget>,
+): Promise<boolean> {
+  const current = await readTarget(db);
+  if (!sameTarget(used, current)) return false;
+  await writeSetting(db, TARGET_KEY, { ...current!, ...change });
+  return true;
+}
+
+const changedMeanwhile = () => conflict("The target changed meanwhile. Try again.", "target_changed");
+
 /** Checks the bucket and the repository and stores what it found. */
 export async function testTarget(db: DbOrTx): Promise<void> {
   const target = await readTarget(db);
@@ -159,7 +185,7 @@ export async function testTarget(db: DbOrTx): Promise<void> {
       checkedAt,
     };
   } else repository = { state: probe.state, message: null, checkedAt };
-  await writeSetting(db, TARGET_KEY, { ...target, repository, protection });
+  await updateIfUnchanged(db, target, { repository, protection });
 }
 
 /** Creates a new repository at the target, with a new password unless one is stored. */
@@ -174,7 +200,14 @@ export async function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promis
   if (target.repository.state === "error") {
     throw conflict(target.repository.message ?? "The bucket cannot be reached", "target_unreachable");
   }
-  const password = target.password ? decryptSecret(target.password) : randomSecret(32);
+  // The password is stored before restic uses it: a repository must never exist
+  // without its password being kept.
+  let used = target;
+  if (!target.password) {
+    used = { ...target, password: encryptSecret(randomSecret(32)) };
+    if (!(await updateIfUnchanged(db, target, { password: used.password }))) throw changedMeanwhile();
+  }
+  const password = decryptSecret(used.password!);
   await initRepository({
     url: repositoryUrl(target),
     accessKeyId: target.accessKeyId,
@@ -182,12 +215,11 @@ export async function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promis
     region: target.region,
     password,
   });
-  await writeSetting(db, TARGET_KEY, {
-    ...target,
-    password: encryptSecret(password),
+  const ready = await updateIfUnchanged(db, used, {
     repository: { state: "ready", message: null, checkedAt: new Date().toISOString() },
     recoveryKitConfirmedAt: null,
   });
+  if (!ready) throw changedMeanwhile();
   await audit(db, actor, {
     action: "repository.create",
     entityType: "target",
@@ -211,12 +243,12 @@ export async function connectTarget(db: DbOrTx, password: string, actor: UserPri
   if (probe.state === "missing")
     throw conflict("There is no repository at this location yet", "repository_missing");
   if (probe.state === "error") throw conflict(probe.message, "target_unreachable");
-  await writeSetting(db, TARGET_KEY, {
-    ...target,
+  const connected = await updateIfUnchanged(db, target, {
     password: encryptSecret(password),
     repository: { state: "ready", message: null, checkedAt: new Date().toISOString() },
     recoveryKitConfirmedAt: null,
   });
+  if (!connected) throw changedMeanwhile();
   await audit(db, actor, {
     action: "repository.connect",
     entityType: "target",

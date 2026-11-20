@@ -6,7 +6,7 @@ import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
 import { getDb } from "../db/client";
 import { backupDirectory, listSnapshots, sourceTag } from "../restic/restic";
 import { openRepository } from "../target/target";
-import { createUser, request, resetDatabase, setUpTarget } from "../test/helpers";
+import { createUser, request, resetDatabase, setUpTarget, testApp } from "../test/helpers";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
 
@@ -164,6 +164,14 @@ describe("sources", () => {
     for (const id of [keep.body.source.id, forget.body.source.id]) {
       await backupDirectory(repository, { tag: sourceTag(id), directory });
     }
+    // That snapshot holds no backup.tar (it is a folder): restic dump fails, and so does the download.
+    const [snapshot] = await listSnapshots(repository, sourceTag(keep.body.source.id));
+    const response = await testApp().request(
+      `/api/v1/sources/${keep.body.source.id}/snapshots/${snapshot!.shortId}/download`,
+      { headers: { "x-test-user": admin.id } },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.arrayBuffer()).rejects.toThrow();
     expect(
       (await request("DELETE", `/api/v1/sources/${keep.body.source.id}?snapshots=keep`, { userId: admin.id }))
         .status,
