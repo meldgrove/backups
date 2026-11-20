@@ -10,7 +10,8 @@ On a source's page, each snapshot has a **Download** link:
 
 - **Meldgrove app:** a tar file (`backup.tar` of the snapshot) with
   `manifest.json`, `db.dump` and `volumes/<name>/`.
-- **Google Drive, Personio:** a zip file of the copy at that time.
+- **Google Drive, Personio, S3 bucket:** a zip file of the copy at that
+  time.
 
 Every download is in the audit log.
 
@@ -73,8 +74,13 @@ On the app's server, in its folder (e.g. `/srv/handbook`):
 
    The volume's name is `<project>_<volume>`; `docker volume ls` lists them.
 
-5. **Start** the app with the version in the manifest's `image` (or newer):
+5. **Keys:** the app's `.env` needs the settings that the source page and
+   the recovery kit name (such as `ENCRYPTION_KEY`), with their values from
+   the copy of the app's `.env` kept apart. The backups do not hold them.
+6. **Start** the app with the version in the manifest's `image` (or newer):
    `docker compose up -d`. Migrations bring an older database up to date.
+7. **The app's own steps:** then follow the app's deployment guide. Some
+   apps, such as Reimbursements, require more steps after a restore.
 
 ## Google Drive
 
@@ -86,6 +92,17 @@ The files are under `./restore/data/staging/<source id>/`. Upload them back
 to Drive (drag them into the drive in the browser, or with
 [rclone](https://rclone.org) `copy`). Google Docs, Sheets and Slides come
 back as Office files; Drive converts them when they are opened.
+
+## S3 bucket
+
+```sh
+restic restore <snapshot> --target ./restore
+```
+
+The objects are under `./restore/data/staging/<source id>/`, without the
+folder's name if the source copied one folder. Copy them back into the
+bucket, into that folder when the source copied one (for example
+`originals/`), with [rclone](https://rclone.org) `copy` or `aws s3 sync`.
 
 ## Personio
 

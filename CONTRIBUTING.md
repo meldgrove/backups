@@ -7,8 +7,9 @@ the setup and the checks.
 ## Development setup
 
 Requirements: Node.js 26, Docker with Compose, and
-[restic](https://restic.net) 0.19 on the `PATH` (`rclone` too, to try Google
-Drive).
+[restic](https://restic.net) 0.19 and [rclone](https://rclone.org) on the
+`PATH` (the integration tests and the Google Drive and S3 bucket sources use
+rclone).
 
 ```sh
 docker compose -f compose.dev.yaml up -d
@@ -38,7 +39,7 @@ npm run lint
 npm run format:check
 npm run typecheck
 npm test
-npm run test:integration   # PostgreSQL, S3 and Mailpit of compose.dev.yaml, restic
+npm run test:integration   # PostgreSQL, S3 and Mailpit of compose.dev.yaml, restic, rclone
 npm run build
 ```
 
@@ -87,7 +88,9 @@ Release builds upload the source maps to the Sentry project
 
 The versions of restic and rclone are build arguments in the `Dockerfile`,
 with their SHA-256 checksums; update them by hand (Dependabot does not see
-them), together with `RESTIC_VERSION` in `.github/workflows/ci.yml`.
+them), together with `RESTIC_VERSION` and `RCLONE_RELEASE` (not
+`RCLONE_VERSION`: rclone reads `RCLONE_*` variables as its flags) in
+`.github/workflows/ci.yml`.
 
 ## Data, secrets and privacy
 

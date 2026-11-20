@@ -25,6 +25,7 @@ import { queueForget } from "../worker/maintenance";
 import { STREAM_FILENAME } from "../sources/agent";
 import { stagingDir, testDrive } from "../sources/google-drive";
 import { testPersonio } from "../sources/personio";
+import { testS3Bucket } from "../sources/s3-bucket";
 import {
   createSource,
   getSourceRow,
@@ -127,6 +128,7 @@ router.post("/sources/:id/test", async (c) => {
   let result: SourceTest;
   if (row.kind === "google_drive") result = await testDrive(row);
   else if (row.kind === "personio") result = await testPersonio(row);
+  else if (row.kind === "s3_bucket") result = await testS3Bucket(row);
   else {
     const seen = row.agentLastSeenAt;
     const fresh = seen && Date.now() - seen.getTime() < 10 * 60_000;
@@ -169,7 +171,7 @@ function downloadName(name: string, time: string, extension: string) {
 
 /**
  * A snapshot as a file: the agent's tar for app sources, a zip of the copy
- * for Google Drive and Personio. Streams as restic reads it.
+ * for the other kinds. Streams as restic reads it.
  */
 router.get("/sources/:id/snapshots/:snapshot/download", async (c) => {
   const actor = requireAdmin(c);

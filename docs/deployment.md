@@ -23,9 +23,9 @@ itself. Every environment variable is described in
 - **An OpenID Connect provider** for sign-in (Keycloak, Microsoft Entra ID,
   Google, Authentik, …).
 - **An S3-compatible bucket** for the backups ([below](#the-bucket)).
-- **Disk space** in the `data` volume for the local copies of Google Drive
-  and Personio (as much as they hold) and restic's cache (a few percent of
-  the repository).
+- **Disk space** in the `data` volume for the local copies of Google Drive,
+  S3 buckets and Personio (as much as they hold) and restic's cache (a few
+  percent of the repository).
 
 ## What runs
 
@@ -47,8 +47,9 @@ the releases within a series install without anyone acting. Every change on
 - **`web`** serves the interface and receives the agents' uploads (each
   upload runs a restic process in it). Run exactly one `web`: an upload lives
   in its memory.
-- **`worker`** plans the runs, backs up Google Drive, Personio and the app's
-  own database one at a time, runs the daily upkeep, and sends alerts.
+- **`worker`** plans the runs, backs up Google Drive, S3 buckets, Personio
+  and the app's own database one at a time, runs the daily upkeep, and
+  sends alerts.
 
 The image runs as an unprivileged user (uid 1000). `web` listens on port
 3000, published on `127.0.0.1:3000` for a reverse proxy on the same machine;
@@ -95,7 +96,7 @@ Steps:
    E=https://hel1.your-objectstorage.com   # the bucket's location
    B=acme-backups                          # the bucket's name
    aws s3api put-object-lock-configuration --endpoint-url "$E" --bucket "$B" \
-     --object-lock-configuration '{"ObjectLockEnabled":"Enabled","Rule":{"DefaultRetention":{"Mode":"GOVERNANCE","Days":30}}}'
+     --object-lock-configuration '{"ObjectLockEnabled":"Enabled","Rule":{"DefaultRetention":{"Mode":"COMPLIANCE","Days":30}}}'
    aws s3api put-bucket-lifecycle-configuration --endpoint-url "$E" --bucket "$B" \
      --lifecycle-configuration '{"Rules":[
        {"ID":"old-versions","Status":"Enabled","Prefix":"",
@@ -127,10 +128,18 @@ Steps:
    ([Restore](restore.md)). Without it, nobody can restore the backups when
    this app and its database are lost.
 
-Governance mode lets someone with the special permission delete locked
-objects early; compliance mode (`"Mode":"COMPLIANCE"`) lets nobody, not
-even Hetzner's support, until the lock ends. Hetzner deletes all data when
-the contract ends, Object Lock or not.
+The commands set **compliance** mode: nobody can delete a locked version
+before its lock ends, not even with the bucket's keys. In governance mode, a
+key with the bypass permission can delete locked versions early. Hetzner's
+own Object Lock guide shows such a bypass, and Hetzner's keys are valid for
+every bucket of their project, so the key that Backups holds can most likely
+do it: exactly the case the lock is for, a taken-over Backups server. This
+is not tested against a real Hetzner bucket. Governance mode
+(`"Mode":"GOVERNANCE"`) stays an option for those who accept that.
+
+In compliance mode, nobody can empty or delete the bucket before the locks
+of its objects end. Hetzner deletes all data when the contract ends, Object
+Lock or not.
 
 ## Setup
 
@@ -244,9 +253,14 @@ keeps the app current, in one of two channels:
 - **Preview**: every change on `main` as soon as its checks pass, before it
   is released. Previews install within the hour.
 
-Set `UPDATE_WINDOW` (such as `05:30-07:00`, in the time zone `TZ`) to keep
-installs away from the backup times. Admins see an update icon in the header
-and choose the channel under **Settings → Updates**.
+Set `UPDATE_WINDOW` (such as `05:30-07:00`, in the time zone `TZ`) outside
+all backup times and the daily upkeep: an update restarts `web` and
+`worker`, and a restart of `web` ends every running upload of an agent. The
+apps have update windows of their own: each app's backup should finish
+before its app's `UPDATE_WINDOW`, because automatic updates run the app's
+migrations without anyone present ([Sources](sources.md#meldgrove-apps)).
+Admins see an update icon in the header and choose the channel under
+**Settings → Updates**.
 
 ### Setup on the server
 
@@ -291,4 +305,5 @@ copied) is on its page in the app.
 - Use a bucket in a project of its own, with Object Lock
   ([The bucket](#the-bucket)).
 - Use read-only access for the sources: the service account's Drive scope
-  is `drive.readonly`; Personio credentials need only read permissions.
+  is `drive.readonly`; Personio credentials and the keys of S3 bucket
+  sources need only read permissions.

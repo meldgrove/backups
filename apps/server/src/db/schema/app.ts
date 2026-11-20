@@ -11,6 +11,8 @@ export type StoredAgentInfo = {
   appImage: string;
   database: boolean;
   volumes: string[];
+  /** Names of the settings a restore needs from the app's .env; missing in rows from before it existed. */
+  secrets?: string[];
 };
 
 /** A snapshot of a successful run, as the dashboard shows it. */
@@ -24,7 +26,7 @@ export const sources = pgTable(
   "sources",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** app | google_drive | personio */
+    /** app | google_drive | personio | s3_bucket */
     kind: text("kind").notNull(),
     name: text("name").notNull(),
     enabled: boolean("enabled").notNull().default(true),

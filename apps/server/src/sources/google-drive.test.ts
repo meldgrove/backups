@@ -60,6 +60,9 @@ describe("Google Drive", () => {
       '{"level":"notice","msg":"Duplicate object found in source - ignoring","object":"Board/minutes.docx"}',
       '{"level":"critical","msg":"Failed to create file system: token https://user:secret@x invalid"}',
       '{"level":"error","msg":"error reading source root directory: googleapi: Error 403","object":"Board"}',
+      // rclone 1.76 after an item error: about the copy (an Fs), not about an item.
+      '{"level":"error","msg":"not deleting files as there were IO errors","object":"Local file system at /data/staging/s1","objectType":"*local.Fs"}',
+      '{"level":"error","msg":"not deleting directories as there were IO errors","object":"Local file system at /data/staging/s1","objectType":"*local.Fs"}',
       "",
     ].join("\n");
     expect(parseRcloneLog(log)).toEqual({
@@ -89,6 +92,16 @@ describe("Google Drive", () => {
           message: "error reading source root directory: googleapi: Error 403",
           object: "Board",
           kind: "general",
+        },
+        {
+          message: "not deleting files as there were IO errors",
+          object: "Local file system at /data/staging/s1",
+          kind: "summary",
+        },
+        {
+          message: "not deleting directories as there were IO errors",
+          object: "Local file system at /data/staging/s1",
+          kind: "summary",
         },
       ],
       duplicates: ["Board/minutes.docx"],

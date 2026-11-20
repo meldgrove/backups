@@ -409,7 +409,15 @@ function RecoveryKitCard({ target }: { target: Target }) {
   );
 }
 
-function ProtectionRow(props: { ok: boolean | null; label: string; value: ReactNode; tip?: ReactNode }) {
+function ProtectionRow(props: {
+  ok: boolean | null;
+  label: string;
+  value: ReactNode;
+  /** Shown when the setting is missing. */
+  tip?: ReactNode;
+  /** Shown whenever it is given. */
+  note?: ReactNode;
+}) {
   const Icon = props.ok === null ? CircleHelp : props.ok ? CircleCheck : TriangleAlert;
   const color =
     props.ok === null ? "text-muted-foreground" : props.ok ? "text-emerald-600" : "text-amber-600";
@@ -422,6 +430,7 @@ function ProtectionRow(props: { ok: boolean | null; label: string; value: ReactN
           {props.value}
         </div>
         {props.tip && props.ok === false ? <div className="text-muted-foreground">{props.tip}</div> : null}
+        {props.note ? <div className="text-muted-foreground">{props.note}</div> : null}
       </div>
     </li>
   );
@@ -480,6 +489,11 @@ function ProtectionCard({ target }: { target: Target }) {
                   protection.objectLock === null ? t("unknown") : objectLockText(t, protection.objectLock)
                 }
                 tip={t("objectLockTip")}
+                note={
+                  protection.objectLock?.enabled && protection.objectLock.mode === "GOVERNANCE"
+                    ? t("governanceNote")
+                    : undefined
+                }
               />
               <ProtectionRow
                 ok={lifecycleComplete(protection)}

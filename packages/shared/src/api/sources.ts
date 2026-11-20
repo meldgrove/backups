@@ -2,6 +2,13 @@ import { z } from "zod";
 import { idSchema, secretInput } from "./common";
 import { runSchema } from "./runs";
 import { retentionSchema, scheduleSchema } from "./schedule";
+import {
+  s3AccessKeyIdSchema,
+  s3BucketSchema,
+  s3EndpointSchema,
+  s3PrefixSchema,
+  s3RegionSchema,
+} from "./target";
 
 /*
  * Sources: what is backed up.
@@ -10,10 +17,12 @@ import { retentionSchema, scheduleSchema } from "./schedule";
  *   google_drive  a shared drive or folders of Google Workspace, through a
  *                 service account with domain-wide delegation (rclone)
  *   personio      people with their attributes, and their documents
+ *   s3_bucket     the objects of an S3-compatible bucket (or of a folder
+ *                 in it), through a read-only key (rclone)
  * Secrets (keys, client secrets) are write-only: the API answers with hints.
  */
 
-export const SOURCE_KINDS = ["app", "google_drive", "personio"] as const;
+export const SOURCE_KINDS = ["app", "google_drive", "personio", "s3_bucket"] as const;
 export const sourceKindSchema = z.enum(SOURCE_KINDS);
 export type SourceKind = z.infer<typeof sourceKindSchema>;
 
@@ -32,6 +41,8 @@ export const agentInfoSchema = z.object({
   appImage: z.string().nullable(),
   database: z.boolean().nullable(),
   volumes: z.array(z.string()),
+  /** Names of the app's settings that a restore needs from its .env (the backups hold no values). */
+  secrets: z.array(z.string()),
   /** The last characters of the token, to tell tokens apart. */
   tokenHint: z.string().nullable(),
 });
@@ -102,6 +113,24 @@ export const personioConfigViewSchema = personioConfigSchema.extend({
   clientSecretHint: z.string().nullable(),
 });
 
+/* ---------- S3 bucket ---------- */
+
+export const s3BucketConfigSchema = z.object({
+  endpoint: s3EndpointSchema,
+  region: s3RegionSchema,
+  bucket: s3BucketSchema,
+  /** Only this folder of the bucket; empty: the whole bucket. */
+  prefix: s3PrefixSchema,
+  accessKeyId: s3AccessKeyIdSchema,
+});
+export type S3BucketConfig = z.infer<typeof s3BucketConfigSchema>;
+
+export const s3BucketSecretsInputSchema = z.object({ secretAccessKey: secretInput(500) });
+
+export const s3BucketConfigViewSchema = s3BucketConfigSchema.extend({
+  secretAccessKeyHint: z.string().nullable(),
+});
+
 /* ---------- Sources ---------- */
 
 /**
@@ -155,6 +184,12 @@ export const sourceSchema = z.discriminatedUnion("kind", [
     agent: z.null(),
   }),
   z.object({ ...sourceBase, kind: z.literal("personio"), config: personioConfigViewSchema, agent: z.null() }),
+  z.object({
+    ...sourceBase,
+    kind: z.literal("s3_bucket"),
+    config: s3BucketConfigViewSchema,
+    agent: z.null(),
+  }),
 ]);
 export type Source = z.infer<typeof sourceSchema>;
 
@@ -183,6 +218,12 @@ export const sourceInputSchema = z.discriminatedUnion("kind", [
     config: personioConfigSchema,
     secrets: personioSecretsInputSchema.default({}),
   }),
+  z.object({
+    ...inputBase,
+    kind: z.literal("s3_bucket"),
+    config: s3BucketConfigSchema,
+    secrets: s3BucketSecretsInputSchema.default({}),
+  }),
 ]);
 export type SourceInput = z.input<typeof sourceInputSchema>;
 export type ParsedSourceInput = z.output<typeof sourceInputSchema>;
@@ -199,11 +240,11 @@ export type AgentToken = z.infer<typeof agentTokenSchema>;
 export const sourceTestSchema = z.object({
   ok: z.boolean(),
   message: z.string(),
-  /** Items found (files, people), when counted. */
+  /** Items found (files, objects, people), when counted. */
   items: z.number().nullable(),
   /** Their size in bytes, when known. */
   bytes: z.number().nullable(),
-  /** Free space for the local copy (Google Drive), in bytes. */
+  /** Free space for the local copy (Google Drive, S3 bucket), in bytes. */
   freeBytes: z.number().nullable(),
 });
 export type SourceTest = z.infer<typeof sourceTestSchema>;
@@ -223,4 +264,5 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   app: "Meldgrove app",
   google_drive: "Google Drive",
   personio: "Personio",
+  s3_bucket: "S3 bucket",
 };

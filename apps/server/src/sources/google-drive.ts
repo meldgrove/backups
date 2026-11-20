@@ -69,6 +69,8 @@ const SUMMARY = /^(Attempt \d+\/\d+ failed with \d+ errors|Failed to (sync|copy)
 /** A folder could not be listed: what the copy holds of it may be old, so the copy fails. */
 const LISTING = /error reading (source|destination)|couldn't list|directory not found/i;
 const DUPLICATE = /^Duplicate (object|directory) found in source/;
+/** After item errors, sync leaves deleted files in the copy: a notice about the copy, not an item. */
+const NOT_DELETING = /^not deleting (files|directories) as there were IO errors/;
 
 /** Reads rclone's JSON log (stderr, --use-json-log): the errors, and the items skipped as duplicates. */
 export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicates: string[] } {
@@ -88,11 +90,13 @@ export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicate
           object,
           kind: LISTING.test(message)
             ? "general"
-            : object
-              ? "item"
-              : SUMMARY.test(message)
-                ? "summary"
-                : "general",
+            : NOT_DELETING.test(message)
+              ? "summary"
+              : object
+                ? "item"
+                : SUMMARY.test(message)
+                  ? "summary"
+                  : "general",
         });
       }
     } catch {
@@ -104,7 +108,12 @@ export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicate
   return { errors, duplicates };
 }
 
-function rclone(args: string[], env: Record<string, string>, signal?: AbortSignal): Promise<RcloneResult> {
+/** Runs rclone with no config file: its remote comes from `env` (RCLONE_CONFIG_<NAME>_*), never from arguments. */
+export function rclone(
+  args: string[],
+  env: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<RcloneResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       config().RCLONE_BINARY,
@@ -164,8 +173,32 @@ export async function freeBytes(directory: string): Promise<number | null> {
 }
 
 /** What went wrong, in one line: the first error that is not about a single file, else the first. */
-function summary(errors: RcloneError[], fallback: string) {
+export function rcloneSummary(errors: RcloneError[], fallback: string) {
   return (errors.find((error) => error.kind === "general") ?? errors[0])?.message ?? fallback;
+}
+
+/**
+ * The errors about single items of an rclone copy, which the backup goes on
+ * without. Any other error fails the copy (`what` failed: …), so a backup
+ * never saves an outdated copy as if it were current.
+ */
+export function itemErrors(result: RcloneResult, what: string): RcloneError[] {
+  const general = result.errors.filter((error) => error.kind === "general");
+  const items = result.errors.filter((error) => error.kind === "item");
+  if (result.code !== 0 && (general.length > 0 || items.length === 0)) {
+    throw new Error(`${what} failed: ${rcloneSummary(result.errors, `rclone exited with ${result.code}`)}`);
+  }
+  return items;
+}
+
+/** Refuses a first copy of `needed` bytes that would nearly fill the data volume. */
+export async function checkRoom(directory: string, needed: number) {
+  const free = await freeBytes(directory);
+  if (free !== null && needed > free * 0.9) {
+    throw new Error(
+      `The first copy needs about ${Math.ceil(needed / 1e9)} GB; ${Math.floor(free / 1e9)} GB are free in the data volume`,
+    );
+  }
 }
 
 /** Can the service account reach the drive or folders, and how much is there? */
@@ -191,7 +224,7 @@ export async function testDrive(source: SourceRow): Promise<SourceTest> {
     if (access.code !== 0) {
       return {
         ok: false,
-        message: `Google Drive refused: ${summary(access.errors, `rclone exited with ${access.code}`)}`,
+        message: `Google Drive refused: ${rcloneSummary(access.errors, `rclone exited with ${access.code}`)}`,
         items: null,
         bytes: null,
         freeBytes: null,
@@ -247,15 +280,12 @@ export async function copyDrive(
     for (const remote of remotes) {
       const size = await rclone(["size", "gdrive:", "--json", "--fast-list"], remote.env, options.signal);
       if (size.code !== 0)
-        throw new Error(`Google Drive refused: ${summary(size.errors, `rclone exited with ${size.code}`)}`);
+        throw new Error(
+          `Google Drive refused: ${rcloneSummary(size.errors, `rclone exited with ${size.code}`)}`,
+        );
       needed += Math.max(0, (JSON.parse(size.stdout || "{}") as { bytes?: number }).bytes ?? 0);
     }
-    const free = await freeBytes(root);
-    if (free !== null && needed > free * 0.9) {
-      throw new Error(
-        `The first copy needs about ${Math.ceil(needed / 1e9)} GB; ${Math.floor(free / 1e9)} GB are free in the data volume`,
-      );
-    }
+    await checkRoom(root, needed);
     await options.log(`First copy: about ${Math.ceil(needed / 1e6)} MB in Google Drive`);
   }
   const warnings: string[] = [];
@@ -268,13 +298,7 @@ export async function copyDrive(
     // Folders: the copy holds one folder per configured folder; leave the others alone.
     const result = await rclone(args, remote.env, options.signal);
     if (options.signal.aborted) throw new Error("Stopped");
-    const general = result.errors.filter((error) => error.kind === "general");
-    const items = result.errors.filter((error) => error.kind === "item");
-    if (result.code !== 0 && (general.length > 0 || items.length === 0)) {
-      throw new Error(
-        `Google Drive copy failed: ${summary(result.errors, `rclone exited with ${result.code}`)}`,
-      );
-    }
+    const items = itemErrors(result, "Google Drive copy");
     const where = remote.target ? ` in ${remote.target}` : "";
     for (const error of items) errors.push(`${error.object}: ${error.message}`.slice(0, 500));
     if (items.length > 0) warnings.push(`${items.length} item(s) could not be copied${where}`);

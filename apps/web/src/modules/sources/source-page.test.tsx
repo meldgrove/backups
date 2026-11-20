@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appSource, driveSource, IDS, run } from "@/test-fixtures";
+import { agentInfo, appSource, driveSource, IDS, run, s3Source } from "@/test-fixtures";
 import { renderPage, requests, stubApi } from "@/test-utils";
 import { SourcePage } from "./source-page";
 
@@ -122,7 +122,7 @@ describe("source page", () => {
   it("explains the agent's setup until it checks in, and makes a new token after asking", async () => {
     const source = appSource({
       status: "never",
-      agent: {
+      agent: agentInfo({
         lastSeenAt: null,
         version: null,
         appName: null,
@@ -130,7 +130,7 @@ describe("source page", () => {
         database: null,
         volumes: [],
         tokenHint: null,
-      },
+      }),
     });
     const fetch = stubSource(source, {
       [`POST /sources/${IDS.app}/token`]: { body: { token: "mgb_new" } },
@@ -155,6 +155,24 @@ describe("source page", () => {
     renderPage(<SourcePage id={IDS.app} />);
     expect(await screen.findByText("ghcr.io/meldgrove/handbook:1.4.0")).toBeVisible();
     expect(screen.getByText("ends in x9Yz")).toBeVisible();
+    expect(screen.queryByText(/Keep apart from the backups/)).not.toBeInTheDocument();
     expect(await screen.findAllByRole("link", { name: /as tar$/ })).toHaveLength(2);
+  });
+
+  it("names the app's settings that a restore needs", async () => {
+    stubSource(appSource({ agent: agentInfo({ secrets: ["AUTH_SECRET", "ENCRYPTION_KEY"] }) }));
+    renderPage(<SourcePage id={IDS.app} />);
+    expect(
+      await screen.findByText(
+        "Keep apart from the backups: AUTH_SECRET, ENCRYPTION_KEY. A restore needs them from the app's .env; the backups do not hold them.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("shows an S3 bucket source's bucket and folder", async () => {
+    stubSource(s3Source());
+    renderPage(<SourcePage id={IDS.s3} />);
+    expect(await screen.findByText("acme-library/originals")).toBeVisible();
+    expect(screen.getByText("https://fsn1.your-objectstorage.com")).toBeVisible();
   });
 });

@@ -37,6 +37,13 @@ export type SourceFormValues = {
   clientId: string;
   documents: boolean;
   clientSecret: SecretValue;
+  // S3 bucket
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  accessKeyId: string;
+  secretAccessKey: SecretValue;
 };
 
 export const RETENTION_KEYS = ["daily", "weekly", "monthly", "yearly"] as const;
@@ -62,6 +69,7 @@ export function initialValues(source?: Source): SourceFormValues {
   const schedule = source?.schedule ?? DEFAULT_SCHEDULE;
   const drive = source?.kind === "google_drive" ? source.config : null;
   const personio = source?.kind === "personio" ? source.config : null;
+  const s3 = source?.kind === "s3_bucket" ? source.config : null;
   return {
     name: source?.name ?? "",
     enabled: source?.enabled ?? true,
@@ -83,6 +91,12 @@ export function initialValues(source?: Source): SourceFormValues {
     clientId: personio?.clientId ?? "",
     documents: personio?.documents ?? true,
     clientSecret: initialSecret(personio?.clientSecretHint != null),
+    endpoint: s3?.endpoint ?? "",
+    region: s3?.region ?? "",
+    bucket: s3?.bucket ?? "",
+    prefix: s3?.prefix ?? "",
+    accessKeyId: s3?.accessKeyId ?? "",
+    secretAccessKey: initialSecret(s3?.secretAccessKeyHint != null),
   };
 }
 
@@ -132,6 +146,21 @@ export function toSourceInput(kind: SourceKind, values: SourceFormValues): Sourc
       secrets: key ? { serviceAccountKey: key } : {},
     };
   }
+  if (kind === "s3_bucket") {
+    const secret = secretPayload(values.secretAccessKey);
+    return {
+      ...base,
+      kind,
+      config: {
+        endpoint: values.endpoint,
+        region: values.region,
+        bucket: values.bucket,
+        prefix: values.prefix,
+        accessKeyId: values.accessKeyId,
+      },
+      secrets: secret ? { secretAccessKey: secret } : {},
+    };
+  }
   const secret = secretPayload(values.clientSecret);
   return {
     ...base,
@@ -156,6 +185,10 @@ export function sourceToInput(source: Source, changes: { enabled?: boolean } = {
       kind: "google_drive",
       config: { subject: source.config.subject, scope: source.config.scope },
     };
+  }
+  if (source.kind === "s3_bucket") {
+    const { endpoint, region, bucket, prefix, accessKeyId } = source.config;
+    return { ...base, kind: "s3_bucket", config: { endpoint, region, bucket, prefix, accessKeyId } };
   }
   return {
     ...base,

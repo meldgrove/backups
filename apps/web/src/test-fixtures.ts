@@ -2,7 +2,7 @@ import type { Dashboard } from "@backups/shared/api/dashboard";
 import { DEFAULT_NOTIFICATIONS, type Notifications } from "@backups/shared/api/notifications";
 import type { Run } from "@backups/shared/api/runs";
 import { DEFAULT_RETENTION, DEFAULT_SCHEDULE } from "@backups/shared/api/schedule";
-import type { Source } from "@backups/shared/api/sources";
+import type { AgentInfo, Source } from "@backups/shared/api/sources";
 import type { Target } from "@backups/shared/api/target";
 
 /** Answers of the API for tests, with overrides. */
@@ -11,6 +11,7 @@ export const IDS = {
   app: "0b5a3e5e-3c1f-4d8e-9f3a-000000000001",
   drive: "0b5a3e5e-3c1f-4d8e-9f3a-000000000002",
   personio: "0b5a3e5e-3c1f-4d8e-9f3a-000000000003",
+  s3: "0b5a3e5e-3c1f-4d8e-9f3a-000000000004",
   run: "0b5a3e5e-3c1f-4d8e-9f3a-0000000000a1",
 };
 
@@ -26,6 +27,20 @@ const base = {
   createdAt: "2026-11-01T10:00:00.000Z",
 };
 
+export function agentInfo(overrides: Partial<AgentInfo> = {}): AgentInfo {
+  return {
+    lastSeenAt: "2026-11-20T09:00:00.000Z",
+    version: "1.0.0",
+    appName: "handbook",
+    appImage: "ghcr.io/meldgrove/handbook:1.4.0",
+    database: true,
+    volumes: ["files"],
+    secrets: [],
+    tokenHint: "x9Yz",
+    ...overrides,
+  };
+}
+
 export function appSource(overrides: Partial<Extract<Source, { kind: "app" }>> = {}): Source {
   return {
     ...base,
@@ -33,15 +48,7 @@ export function appSource(overrides: Partial<Extract<Source, { kind: "app" }>> =
     name: "Handbook",
     kind: "app",
     config: {},
-    agent: {
-      lastSeenAt: "2026-11-20T09:00:00.000Z",
-      version: "1.0.0",
-      appName: "handbook",
-      appImage: "ghcr.io/meldgrove/handbook:1.4.0",
-      database: true,
-      volumes: ["files"],
-      tokenHint: "x9Yz",
-    },
+    agent: agentInfo(),
     ...overrides,
   };
 }
@@ -74,6 +81,25 @@ export function personioSource(overrides: Partial<Extract<Source, { kind: "perso
       clientId: "papi-123",
       documents: true,
       clientSecretHint: "…f00d",
+    },
+    agent: null,
+    ...overrides,
+  };
+}
+
+export function s3Source(overrides: Partial<Extract<Source, { kind: "s3_bucket" }>> = {}): Source {
+  return {
+    ...base,
+    id: IDS.s3,
+    name: "Library files",
+    kind: "s3_bucket",
+    config: {
+      endpoint: "https://fsn1.your-objectstorage.com",
+      region: "fsn1",
+      bucket: "acme-library",
+      prefix: "originals",
+      accessKeyId: "LIBRARYREAD",
+      secretAccessKeyHint: "…b33f",
     },
     agent: null,
     ...overrides,

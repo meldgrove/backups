@@ -10,11 +10,11 @@ import { messages } from "./messages";
 import { KIND_ICONS, KIND_TEXTS } from "./parts";
 import { SourceForm } from "./source-form";
 
-/** The three kinds, each a link to its form. */
+/** The kinds, each a link to its form. */
 export function KindChoices() {
   const t = useT(messages);
   return (
-    <ul className="grid gap-3 md:grid-cols-3">
+    <ul className="grid gap-3 md:grid-cols-2">
       {SOURCE_KINDS.map((kind) => {
         const Icon = KIND_ICONS[kind];
         return (

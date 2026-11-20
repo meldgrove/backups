@@ -8,32 +8,38 @@ import { secretInput, timeOfDaySchema } from "./common";
  * everything; with the S3 keys it is the recovery kit.
  */
 
+/** The address of an S3-compatible storage, e.g. https://fsn1.your-objectstorage.com */
+export const s3EndpointSchema = z.url({
+  protocol: /^https?$/,
+  message: "Enter the endpoint's URL, e.g. https://fsn1.your-objectstorage.com",
+});
+/** e.g. fsn1; some providers need it for signing. */
+export const s3RegionSchema = z.string().trim().max(64).default("");
+export const s3BucketSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/,
+    "Enter the bucket's name (lowercase letters, digits, dots, hyphens)",
+  );
+/** A folder inside the bucket; empty: the bucket's root. */
+export const s3PrefixSchema = z
+  .string()
+  .trim()
+  .max(200)
+  .regex(
+    /^([A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*)?$/,
+    "Letters, digits, dots, hyphens and slashes between them",
+  )
+  .default("");
+export const s3AccessKeyIdSchema = z.string().trim().min(1, "Enter the access key").max(200);
+
 export const targetInputSchema = z.object({
-  /** e.g. https://fsn1.your-objectstorage.com */
-  endpoint: z.url({
-    protocol: /^https?$/,
-    message: "Enter the endpoint's URL, e.g. https://fsn1.your-objectstorage.com",
-  }),
-  /** e.g. fsn1; some providers need it for signing. */
-  region: z.string().trim().max(64).default(""),
-  bucket: z
-    .string()
-    .trim()
-    .regex(
-      /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/,
-      "Enter the bucket's name (lowercase letters, digits, dots, hyphens)",
-    ),
-  /** A folder inside the bucket; empty: the bucket's root. */
-  prefix: z
-    .string()
-    .trim()
-    .max(200)
-    .regex(
-      /^([A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*)?$/,
-      "Letters, digits, dots, hyphens and slashes between them",
-    )
-    .default(""),
-  accessKeyId: z.string().trim().min(1, "Enter the access key").max(200),
+  endpoint: s3EndpointSchema,
+  region: s3RegionSchema,
+  bucket: s3BucketSchema,
+  prefix: s3PrefixSchema,
+  accessKeyId: s3AccessKeyIdSchema,
   secretAccessKey: secretInput(500),
 });
 export type TargetInput = z.input<typeof targetInputSchema>;
