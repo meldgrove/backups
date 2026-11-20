@@ -56,8 +56,9 @@ services:
     volumes:
       - s3:/data
 
-  # Creates the bucket "backups" with Object Lock (30 days, governance) and
-  # the lifecycle rules a target should have, as on Hetzner (docs/deployment.md).
+  # Creates the bucket "backups" with Object Lock (30 days) and the lifecycle
+  # rules a target should have, as on Hetzner (docs/deployment.md). Governance
+  # mode here, where compliance would keep test data for 30 days.
   s3-setup:
     image: amazon/aws-cli:2.32.5
     depends_on: [s3]

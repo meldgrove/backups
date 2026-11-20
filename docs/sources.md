@@ -33,6 +33,24 @@ bucket.
 3. The source page shows when the agent last asked, its version, the app's
    image, and the volumes it sees. **Back up now** runs the first backup.
 
+**The agent's user.** Run the agent as the app's user (`user:` of the
+`backup-agent` service, as the app's compose file sets it). Reimbursements
+needs `user: "10001:10001"`, because its private folders are readable only
+by their owner (`0700`). A folder the agent cannot read fails the backup.
+
+**Keys a restore needs.** The app's compose file sets `APP_SECRETS` on the
+agent: the names of the settings in the app's `.env` that a restore needs,
+such as `ENCRYPTION_KEY`. The agent reports the names, never the values; the
+source page and the recovery kit list them. The backups do not hold these
+keys: keep a copy of the app's `.env` apart from its server, with the
+recovery kit.
+
+**Schedule and updates.** A backup of an app should finish before the app's
+automatic update window (`UPDATE_WINDOW` in the app's `.env`): automatic
+updates run database migrations without anyone present, and a fresh backup
+is the way back. The update window of Backups itself must lie outside all
+backup times ([Automatic updates](deployment.md#automatic-updates)).
+
 The token belongs to the source; **New token** replaces it (the old one
 stops working at once). Each snapshot holds one file, `backup.tar`:
 `manifest.json`, `db.dump` (`pg_dump` custom format) and `volumes/<name>/`.

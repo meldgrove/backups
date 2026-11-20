@@ -74,8 +74,13 @@ On the app's server, in its folder (e.g. `/srv/handbook`):
 
    The volume's name is `<project>_<volume>`; `docker volume ls` lists them.
 
-5. **Start** the app with the version in the manifest's `image` (or newer):
+5. **Keys:** the app's `.env` needs the settings that the source page and
+   the recovery kit name (such as `ENCRYPTION_KEY`), with their values from
+   the copy of the app's `.env` kept apart. The backups do not hold them.
+6. **Start** the app with the version in the manifest's `image` (or newer):
    `docker compose up -d`. Migrations bring an older database up to date.
+7. **The app's own steps:** then follow the app's deployment guide. Some
+   apps, such as Reimbursements, require more steps after a restore.
 
 ## Google Drive
 
