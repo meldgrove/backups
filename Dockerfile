@@ -1,9 +1,9 @@
 # One image for every process. The command selects the role:
 #   all      web app and worker (default)
 #   web      web app and the agents' uploads (port 3000)
-#   worker   schedules, Google Drive and Personio backups, upkeep, alerts
+#   worker   schedules, Google Drive, S3 bucket and Personio backups, upkeep, alerts
 #   migrate  apply database migrations, then exit
-# The image has restic (backups), rclone (Google Drive) and pg_dump 18 (this
+# The image has restic (backups), rclone (Google Drive, S3 buckets) and pg_dump 18 (this
 # app's own database).
 
 FROM node:26.13.0-bookworm-slim AS base
@@ -83,7 +83,7 @@ ENV NODE_ENV=production \
     PG_DUMP_BINARY=/usr/lib/postgresql/18/bin/pg_dump \
     WORKER_HEARTBEAT_FILE=/tmp/worker-heartbeat
 WORKDIR /app
-# Local copies of Google Drive and Personio, and restic's cache; mount a volume here (compose.yaml).
+# Local copies of Google Drive, S3 buckets and Personio, and restic's cache; mount a volume here (compose.yaml).
 RUN mkdir -p /data && chown -R node:node /data
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json ./package.json

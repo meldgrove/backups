@@ -1,7 +1,7 @@
 # Production on a Linux server (Debian, Ubuntu) with Docker Compose: the
 # release image as two processes, the web app (`web`: the interface and the
-# agents' uploads) and the worker (`worker`: schedules, Google Drive and
-# Personio backups, the daily upkeep, alerts), after a one-off migration,
+# agents' uploads) and the worker (`worker`: schedules, Google Drive, S3
+# bucket and Personio backups, the daily upkeep, alerts), after a one-off migration,
 # plus the `updater` for automatic updates. Settings live in .env next to
 # this file (docs/configuration.md). Start it with:
 #
@@ -18,7 +18,7 @@
 # reverse proxy on the same server, such as Caddy, that terminates HTTPS; set
 # APP_URL to its public https URL. The proxy must accept request bodies of
 # 16 MiB (the agents' parts). The `data` volume holds the local copies of
-# Google Drive and Personio and restic's cache. On Coolify, use
+# Google Drive, S3 buckets and Personio and restic's cache. On Coolify, use
 # compose.coolify.yaml (docs/coolify.md).
 
 x-image: &image ghcr.io/meldgrove/backups:${BACKUPS_VERSION:?Set BACKUPS_VERSION to a release, e.g. 0.1.0}

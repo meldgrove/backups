@@ -39,7 +39,7 @@ export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
 /** Paths of the fields this form shows; other messages go above the buttons. */
 const SHOWN =
-  /^(name|enabled|schedule(\..+)?|retention(\..+)?|config\.(.+)|secrets\.(serviceAccountKey|clientSecret))$/;
+  /^(name|enabled|schedule(\..+)?|retention(\..+)?|config\.(.+)|secrets\.(serviceAccountKey|clientSecret|secretAccessKey))$/;
 
 const RETENTION_LABELS = {
   daily: "keepDaily",
@@ -429,6 +429,86 @@ function PersonioCard({ values, change, errors, source }: Part & { source?: Sour
   );
 }
 
+function S3BucketCard({ values, change, errors, source }: Part & { source?: Source }) {
+  const t = useT(messages);
+  const hint = source?.kind === "s3_bucket" ? source.config.secretAccessKeyHint : null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>{t("s3Title")}</h2>
+        </CardTitle>
+        <CardDescription>{t("s3Help")}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-6 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <TextField
+            id="s3-endpoint"
+            label={t("s3Endpoint")}
+            hint={t("s3EndpointHint")}
+            type="url"
+            autoComplete="off"
+            placeholder="https://fsn1.your-objectstorage.com"
+            value={values.endpoint}
+            onChange={(value) => change("endpoint", value)}
+            error={errors["config.endpoint"]}
+          />
+        </div>
+        <TextField
+          id="s3-region"
+          label={t("s3Region")}
+          hint={t("s3RegionHint")}
+          autoComplete="off"
+          placeholder="fsn1"
+          value={values.region}
+          onChange={(value) => change("region", value)}
+          error={errors["config.region"]}
+        />
+        <TextField
+          id="s3-bucket"
+          label={t("s3Bucket")}
+          autoComplete="off"
+          spellCheck={false}
+          value={values.bucket}
+          onChange={(value) => change("bucket", value)}
+          error={errors["config.bucket"]}
+        />
+        <TextField
+          id="s3-prefix"
+          label={t("s3Prefix")}
+          hint={t("s3PrefixHint")}
+          autoComplete="off"
+          spellCheck={false}
+          value={values.prefix}
+          onChange={(value) => change("prefix", value)}
+          error={errors["config.prefix"]}
+        />
+        <TextField
+          id="s3-access-key"
+          label={t("s3AccessKey")}
+          autoComplete="off"
+          spellCheck={false}
+          className="font-mono"
+          value={values.accessKeyId}
+          onChange={(value) => change("accessKeyId", value)}
+          error={errors["config.accessKeyId"]}
+        />
+        <div className="sm:col-span-2">
+          <SecretField
+            id="s3-secret-key"
+            label={t("s3SecretKey")}
+            stored={hint !== null}
+            hint={hint}
+            value={values.secretAccessKey}
+            onChange={(value) => change("secretAccessKey", value)}
+            error={errors["secrets.secretAccessKey"]}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Adds a source of a kind, or changes one (`source`). */
 export function SourceForm({ kind, source }: { kind: SourceKind; source?: Source }) {
   const t = useT(messages);
@@ -516,6 +596,7 @@ export function SourceForm({ kind, source }: { kind: SourceKind; source?: Source
         <RetentionCard {...part} />
         {kind === "google_drive" ? <DriveCard {...part} source={source} /> : null}
         {kind === "personio" ? <PersonioCard {...part} source={source} /> : null}
+        {kind === "s3_bucket" ? <S3BucketCard {...part} source={source} /> : null}
         <FormErrors messages={formMessages} />
         <div className="flex flex-wrap justify-end gap-2">
           <Button

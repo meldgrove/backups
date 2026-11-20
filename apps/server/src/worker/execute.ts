@@ -15,17 +15,18 @@ import { backupCommandOutput, backupDirectory, SELF_TAG, sourceTag, type Reposit
 import { openRepository } from "../target/target";
 import { copyDrive, stagingDir } from "../sources/google-drive";
 import { exportPersonio } from "../sources/personio";
+import { copyS3Bucket } from "../sources/s3-bucket";
 import { getSourceRow } from "../sources/service";
 import { runMaintenance } from "./maintenance";
 
 type RunRow = typeof runs.$inferSelect;
 
 /** Kinds of source the worker backs up itself (app sources are backed up by their agent). */
-const LOCAL_KINDS = ["google_drive", "personio"];
+const LOCAL_KINDS = ["google_drive", "personio", "s3_bucket"];
 
 /**
- * Claims the next run the worker executes: the oldest queued Google Drive
- * or Personio backup, this app's own backup, or the upkeep. The upkeep
+ * Claims the next run the worker executes: the oldest queued Google Drive,
+ * S3 bucket or Personio backup, this app's own backup, or the upkeep. The upkeep
  * waits while any backup runs (it needs the repository to itself).
  */
 export async function claimNextRun(db: Db): Promise<RunRow | null> {
@@ -104,7 +105,9 @@ async function backupSource(
   const copied =
     source.kind === "google_drive"
       ? await copyDrive(source, { signal, log })
-      : await exportPersonio(source, { signal, log });
+      : source.kind === "s3_bucket"
+        ? await copyS3Bucket(source, { signal, log })
+        : await exportPersonio(source, { signal, log });
   if (copied.errors.length > 0) await appendLog(db, run.id, ...copied.errors.slice(0, 100));
   await log("Saving the snapshot");
   const result = await backupDirectory(repository, {

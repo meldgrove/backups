@@ -21,6 +21,7 @@ export const messages = defineMessages({
     kindApp: "A Meldgrove app's database and files, through the backup-agent service in its compose file.",
     kindGoogleDrive: "A shared drive or folders of Google Workspace, through a service account.",
     kindPersonio: "People with their attributes, and their documents, through Personio's API.",
+    kindS3Bucket: "The files in an S3-compatible bucket, such as an app's uploads, through a read-only key.",
     chooseTitle: "Add source",
     chooseDescription: "Choose what to back up.",
     // Back up now
@@ -118,6 +119,19 @@ export const messages = defineMessages({
     clientSecret: "Client secret",
     documents: "Back up documents",
     documentsHint: "Uses Personio's document API, which is in beta.",
+    // S3 bucket
+    s3Title: "S3 bucket",
+    s3Help:
+      "Every object in the bucket, or in one folder of it, is copied and saved. Use a key that may only read this bucket.",
+    s3Endpoint: "Endpoint",
+    s3EndpointHint: "For Hetzner Object Storage: https://<location>.your-objectstorage.com",
+    s3Region: "Region",
+    s3RegionHint: "e.g. fsn1. Some providers need it.",
+    s3Bucket: "Bucket name",
+    s3Prefix: "Folder in the bucket",
+    s3PrefixHint: "Optional. Empty: the whole bucket.",
+    s3AccessKey: "Access key",
+    s3SecretKey: "Secret key",
     // Buttons and results
     create: "Add source",
     save: "Save",
@@ -178,6 +192,8 @@ export const messages = defineMessages({
     agentToken: "Token",
     agentSecrets:
       "Keep apart from the backups: {names}. A restore needs them from the app's .env; the backups do not hold them.",
+    bucket: "Bucket",
+    endpoint: "Endpoint",
     tokenEnding: "ends in {hint}",
     none: "None",
     notSeen: "Not seen yet",

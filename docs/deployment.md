@@ -23,9 +23,9 @@ itself. Every environment variable is described in
 - **An OpenID Connect provider** for sign-in (Keycloak, Microsoft Entra ID,
   Google, Authentik, …).
 - **An S3-compatible bucket** for the backups ([below](#the-bucket)).
-- **Disk space** in the `data` volume for the local copies of Google Drive
-  and Personio (as much as they hold) and restic's cache (a few percent of
-  the repository).
+- **Disk space** in the `data` volume for the local copies of Google Drive,
+  S3 buckets and Personio (as much as they hold) and restic's cache (a few
+  percent of the repository).
 
 ## What runs
 
@@ -47,8 +47,9 @@ the releases within a series install without anyone acting. Every change on
 - **`web`** serves the interface and receives the agents' uploads (each
   upload runs a restic process in it). Run exactly one `web`: an upload lives
   in its memory.
-- **`worker`** plans the runs, backs up Google Drive, Personio and the app's
-  own database one at a time, runs the daily upkeep, and sends alerts.
+- **`worker`** plans the runs, backs up Google Drive, S3 buckets, Personio
+  and the app's own database one at a time, runs the daily upkeep, and
+  sends alerts.
 
 The image runs as an unprivileged user (uid 1000). `web` listens on port
 3000, published on `127.0.0.1:3000` for a reverse proxy on the same machine;
@@ -291,4 +292,5 @@ copied) is on its page in the app.
 - Use a bucket in a project of its own, with Object Lock
   ([The bucket](#the-bucket)).
 - Use read-only access for the sources: the service account's Drive scope
-  is `drive.readonly`; Personio credentials need only read permissions.
+  is `drive.readonly`; Personio credentials and the keys of S3 bucket
+  sources need only read permissions.

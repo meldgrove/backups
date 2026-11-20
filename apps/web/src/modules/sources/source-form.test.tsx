@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appSource, driveSource, IDS, personioSource, target } from "@/test-fixtures";
+import { appSource, driveSource, IDS, personioSource, s3Source, target } from "@/test-fixtures";
 import { renderPage, requests, stubApi } from "@/test-utils";
 import { EditSourcePage, NewSourcePage } from "./source-form-page";
 
@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals());
 const TOKEN = "mgb_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
 
 describe("source form", () => {
-  it("offers the three kinds first", async () => {
+  it("offers the kinds first", async () => {
     stubApi({});
     renderPage(<NewSourcePage />);
     expect(await screen.findByRole("link", { name: /^Google Drive/ })).toHaveAttribute(
@@ -210,5 +210,35 @@ describe("source form", () => {
       config: { baseUrl: "https://api.personio.de", clientId: "papi-123", documents: false },
       secrets: { clientSecret: "new-secret" },
     });
+  });
+
+  it("asks for the S3 bucket's address and a write-only secret key", async () => {
+    const fetch = stubApi({
+      "GET /target": { body: target() },
+      "POST /sources": { status: 201, body: { source: s3Source(), token: null } },
+    });
+    const user = userEvent.setup();
+    const { router } = renderPage(<NewSourcePage kind="s3_bucket" />);
+    await user.type(await screen.findByLabelText("Name"), "Library files");
+    await user.type(screen.getByLabelText("Endpoint"), "https://fsn1.your-objectstorage.com");
+    await user.type(screen.getByLabelText("Region"), "fsn1");
+    await user.type(screen.getByLabelText("Bucket name"), "acme-library");
+    await user.type(screen.getByLabelText("Folder in the bucket"), "originals");
+    await user.type(screen.getByLabelText("Access key"), "LIBRARYREAD");
+    await user.type(screen.getByLabelText("Secret key"), "library-secret");
+    await user.click(screen.getByRole("button", { name: "Add source" }));
+    await waitFor(() => expect(requests(fetch, "POST /sources")).toHaveLength(1));
+    expect(requests(fetch, "POST /sources")[0]!.body).toMatchObject({
+      kind: "s3_bucket",
+      config: {
+        endpoint: "https://fsn1.your-objectstorage.com",
+        region: "fsn1",
+        bucket: "acme-library",
+        prefix: "originals",
+        accessKeyId: "LIBRARYREAD",
+      },
+      secrets: { secretAccessKey: "library-secret" },
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/sources/${IDS.s3}`));
   });
 });

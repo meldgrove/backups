@@ -4,6 +4,7 @@ import type {
   DriveConfig,
   ParsedSourceInput,
   PersonioConfig,
+  S3BucketConfig,
   Source,
   SourceKind,
 } from "@backups/shared/api/sources";
@@ -138,6 +139,18 @@ export async function sourceViews(db: DbOrTx, rows: SourceRow[], now = new Date(
         agent: null,
       };
     }
+    if (row.kind === "s3_bucket") {
+      const secret = decryptOrNull(row.secrets.secretAccessKey);
+      return {
+        ...base,
+        kind: "s3_bucket",
+        config: {
+          ...(row.config as S3BucketConfig),
+          secretAccessKeyHint: secret ? secretHint(secret) : null,
+        },
+        agent: null,
+      };
+    }
     return {
       ...base,
       kind: "app",
@@ -194,6 +207,14 @@ function secretsOf(input: ParsedSourceInput, stored: Record<string, string>): Re
     if (!stored.clientSecret) throw validationError({ "secrets.clientSecret": "Enter the client secret" });
     return { clientSecret: stored.clientSecret };
   }
+  if (input.kind === "s3_bucket") {
+    const secret = input.secrets.secretAccessKey;
+    if (secret) return { secretAccessKey: encryptSecret(secret.trim()) };
+    if (!stored.secretAccessKey) {
+      throw validationError({ "secrets.secretAccessKey": "Enter the secret key" });
+    }
+    return { secretAccessKey: stored.secretAccessKey };
+  }
   return {};
 }
 
@@ -201,6 +222,8 @@ function configOf(input: ParsedSourceInput): Record<string, unknown> {
   if (input.kind === "google_drive") return input.config;
   if (input.kind === "personio")
     return { ...input.config, baseUrl: input.config.baseUrl.replace(/\/+$/, "") };
+  if (input.kind === "s3_bucket")
+    return { ...input.config, endpoint: input.config.endpoint.replace(/\/+$/, "") };
   return {};
 }
 

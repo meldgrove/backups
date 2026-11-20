@@ -180,6 +180,20 @@ function OverviewCard({ source }: { source: Source }) {
           <Detail label={t("lastSuccess")}>
             <When value={source.lastSuccessAt} empty={t("none")} />
           </Detail>
+          {source.kind === "s3_bucket" ? (
+            <>
+              <Detail label={t("bucket")}>
+                <code className="font-mono text-xs break-all">
+                  {source.config.prefix
+                    ? `${source.config.bucket}/${source.config.prefix}`
+                    : source.config.bucket}
+                </code>
+              </Detail>
+              <Detail label={t("endpoint")}>
+                <code className="font-mono text-xs break-all">{source.config.endpoint}</code>
+              </Detail>
+            </>
+          ) : null}
           <Detail label={t("lastSnapshot")}>
             {source.lastSnapshot ? (
               <>

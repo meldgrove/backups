@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { agentInfo, appSource, driveSource, IDS, run } from "@/test-fixtures";
+import { agentInfo, appSource, driveSource, IDS, run, s3Source } from "@/test-fixtures";
 import { renderPage, requests, stubApi } from "@/test-utils";
 import { SourcePage } from "./source-page";
 
@@ -167,5 +167,12 @@ describe("source page", () => {
         "Keep apart from the backups: AUTH_SECRET, ENCRYPTION_KEY. A restore needs them from the app's .env; the backups do not hold them.",
       ),
     ).toBeVisible();
+  });
+
+  it("shows an S3 bucket source's bucket and folder", async () => {
+    stubSource(s3Source());
+    renderPage(<SourcePage id={IDS.s3} />);
+    expect(await screen.findByText("acme-library/originals")).toBeVisible();
+    expect(screen.getByText("https://fsn1.your-objectstorage.com")).toBeVisible();
   });
 });

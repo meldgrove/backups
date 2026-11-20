@@ -39,7 +39,7 @@ refused. This is checked at every sign-in.
 | Variable                                           | Default         | Meaning                                                                                                          |
 | -------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `TZ`                                               | `UTC`           | The time zone of schedules and the daily upkeep, e.g. `Europe/Berlin`.                                           |
-| `DATA_DIR`                                         | `/data` (image) | Local copies of Google Drive and Personio (`staging/`) and restic's cache (`cache/`). A volume.                  |
+| `DATA_DIR`                                         | `/data` (image) | Local copies of Google Drive, S3 buckets and Personio (`staging/`) and restic's cache (`cache/`). A volume.      |
 | `AGENT_PART_MB`                                    | `16`            | Size of the parts in which agents send their streams. The reverse proxy must accept request bodies of this size. |
 | `AGENT_POLL_SECONDS`                               | `30`            | How often agents ask for work.                                                                                   |
 | `RUN_HISTORY_DAYS`                                 | `180`           | Finished runs older than this are deleted (the newest of each source stays). `0` keeps them all.                 |

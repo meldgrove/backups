@@ -8,8 +8,9 @@ app server(s)                                   Meldgrove Backups
 ┌ app · postgres · volumes ┐                    ┌ web ── agents' uploads ──┐
 │ backup-agent ────────────┼── HTTPS (out) ────►│        restic backup ────┼──► S3 bucket
 └──────────────────────────┘                    │ worker: schedules        │    (restic repository:
-Google Drive ◄── rclone (read-only) ────────────┤  Drive, Personio, self  │     encrypted, deduplicated,
-Personio API ◄── fetch (read-only) ─────────────┤  upkeep, alerts         │     Object Lock)
+Google Drive ◄── rclone (read-only) ────────────┤  Drive, S3, Personio,    │     encrypted, deduplicated,
+S3 bucket ◄───── rclone (read-only) ────────────┤  self, upkeep, alerts    │     Object Lock)
+Personio API ◄── fetch (read-only) ─────────────┤                          │
                                                 └─ PostgreSQL ─────────────┘
 ```
 
@@ -39,8 +40,9 @@ summary.
   passed gets a queued run (unless one is queued or running); its next time
   comes from its schedule (a cron expression in `TZ`). The daily upkeep
   queues `self` and `maintenance`.
-- **Executing** (worker, one at a time): Google Drive and Personio backups,
-  `self`, and the upkeep. The upkeep starts only while no backup runs.
+- **Executing** (worker, one at a time): Google Drive, S3 bucket and
+  Personio backups, `self`, and the upkeep. The upkeep starts only while no
+  backup runs.
 - **App sources** wait for their agent. A queued run nobody picks up within
   2 hours fails.
 - **Cancelling** a queued run ends it at once; a running one stops within
@@ -69,9 +71,9 @@ backup.tar` and keeps an upload session in memory.
    that the agent could not produce the stream. No part or progress for 60
    minutes ends the upload.
 
-## Google Drive and Personio
+## Google Drive, S3 buckets and Personio
 
-Both are copied into `DATA_DIR/staging/<source id>` and then backed up with
+Each is copied into `DATA_DIR/staging/<source id>` and then backed up with
 `restic backup <folder>`. The copy stays between runs, so each run fetches
 only what changed.
 
@@ -80,6 +82,11 @@ only what changed.
   `drive.readonly`, shared drive or root folder, export formats), `rclone
 sync` per shared drive or folder. Errors about single files become
   warnings; any other error fails the run before restic runs.
+- **S3 bucket:** `sources/s3-bucket.ts`, rclone with a remote defined in
+  its environment (`RCLONE_CONFIG_S3SOURCE_*`: provider `Other`, endpoint,
+  region, the key), `rclone sync` of the bucket or one folder in it, with
+  the server's upload time as modification time (no extra request per
+  object). The same rules for errors as Google Drive.
 - **Personio:** `sources/personio.ts`, with the v2 token (which v1
   endpoints accept; the v1 token as a fallback), at most about seven
   requests per second, retries on 429 and 5xx.

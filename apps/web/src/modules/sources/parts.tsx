@@ -1,6 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Building2, CloudUpload, Package, Play, TriangleAlert, type LucideIcon } from "lucide-react";
+import {
+  Building2,
+  CloudUpload,
+  HardDrive,
+  Package,
+  Play,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@meldgrove/ui/alert";
 import { Button } from "@meldgrove/ui/button";
 import { CopyButton } from "@meldgrove/ui/copy-button";
@@ -27,6 +35,7 @@ export const KIND_ICONS: Record<SourceKind, LucideIcon> = {
   app: Package,
   google_drive: CloudUpload,
   personio: Building2,
+  s3_bucket: HardDrive,
 };
 
 /** What each kind backs up, for the kind chooser and the empty dashboard. */
@@ -34,6 +43,7 @@ export const KIND_TEXTS = {
   app: "kindApp",
   google_drive: "kindGoogleDrive",
   personio: "kindPersonio",
+  s3_bucket: "kindS3Bucket",
 } as const satisfies Record<SourceKind, keyof typeof messages.en>;
 
 const DAY_KEYS = ["day0", "day1", "day2", "day3", "day4", "day5", "day6"] as const;

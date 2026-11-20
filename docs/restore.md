@@ -10,7 +10,8 @@ On a source's page, each snapshot has a **Download** link:
 
 - **Meldgrove app:** a tar file (`backup.tar` of the snapshot) with
   `manifest.json`, `db.dump` and `volumes/<name>/`.
-- **Google Drive, Personio:** a zip file of the copy at that time.
+- **Google Drive, Personio, S3 bucket:** a zip file of the copy at that
+  time.
 
 Every download is in the audit log.
 
@@ -86,6 +87,17 @@ The files are under `./restore/data/staging/<source id>/`. Upload them back
 to Drive (drag them into the drive in the browser, or with
 [rclone](https://rclone.org) `copy`). Google Docs, Sheets and Slides come
 back as Office files; Drive converts them when they are opened.
+
+## S3 bucket
+
+```sh
+restic restore <snapshot> --target ./restore
+```
+
+The objects are under `./restore/data/staging/<source id>/`, without the
+folder's name if the source copied one folder. Copy them back into the
+bucket, for example with [rclone](https://rclone.org) `copy` or
+`aws s3 sync`.
 
 ## Personio
 

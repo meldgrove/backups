@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Meldgrove Backups backs up an organization's vital data (Meldgrove apps
-through their backup agent, Google Drive, Personio) into one restic
+through their backup agent, Google Drive, Personio, S3 buckets) into one restic
 repository in S3-compatible storage. User documentation is in `docs/`;
 contributor setup is in `CONTRIBUTING.md`; how it works inside is in
 `docs/architecture.md`.
@@ -33,7 +33,7 @@ apps/server/src/
   restic/          the restic program: backup, snapshots, dump, forget, prune, check
   target/          the bucket and repository (target.ts), the bucket's protection settings
   sources/         sources (service.ts), schedules and status, the agents' uploads
-                   (agent.ts), Google Drive (rclone), Personio (API export)
+                   (agent.ts), Google Drive and S3 buckets (rclone), Personio (API export)
   runs/            runs: create, log, finish, cancel
   worker/          planning runs, executing them one at a time, the daily upkeep
   alerts/          email alerts and the heartbeat
@@ -93,7 +93,7 @@ npm ci
 npm run dev                                # web app http://localhost:5173, server :3000
 
 npm run lint && npm run format:check && npm run typecheck && npm test
-npm run test:integration                   # needs restic on the PATH
+npm run test:integration                   # needs restic and rclone on the PATH
 npm run build
 ```
 

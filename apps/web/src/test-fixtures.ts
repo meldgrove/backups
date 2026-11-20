@@ -11,6 +11,7 @@ export const IDS = {
   app: "0b5a3e5e-3c1f-4d8e-9f3a-000000000001",
   drive: "0b5a3e5e-3c1f-4d8e-9f3a-000000000002",
   personio: "0b5a3e5e-3c1f-4d8e-9f3a-000000000003",
+  s3: "0b5a3e5e-3c1f-4d8e-9f3a-000000000004",
   run: "0b5a3e5e-3c1f-4d8e-9f3a-0000000000a1",
 };
 
@@ -80,6 +81,25 @@ export function personioSource(overrides: Partial<Extract<Source, { kind: "perso
       clientId: "papi-123",
       documents: true,
       clientSecretHint: "…f00d",
+    },
+    agent: null,
+    ...overrides,
+  };
+}
+
+export function s3Source(overrides: Partial<Extract<Source, { kind: "s3_bucket" }>> = {}): Source {
+  return {
+    ...base,
+    id: IDS.s3,
+    name: "Library files",
+    kind: "s3_bucket",
+    config: {
+      endpoint: "https://fsn1.your-objectstorage.com",
+      region: "fsn1",
+      bucket: "acme-library",
+      prefix: "originals",
+      accessKeyId: "LIBRARYREAD",
+      secretAccessKeyHint: "…b33f",
     },
     agent: null,
     ...overrides,

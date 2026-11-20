@@ -26,7 +26,7 @@ export const sources = pgTable(
   "sources",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** app | google_drive | personio */
+    /** app | google_drive | personio | s3_bucket */
     kind: text("kind").notNull(),
     name: text("name").notNull(),
     enabled: boolean("enabled").notNull().default(true),

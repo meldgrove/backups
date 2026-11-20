@@ -116,6 +116,43 @@ snapshots with it (**Delete → Forget its snapshots**); the next upkeep then
 removes the data, and the bucket's lifecycle rules remove the old versions
 once their lock ends.
 
+## S3 bucket
+
+The objects of an S3-compatible bucket (Hetzner Object Storage, AWS S3,
+MinIO, RustFS, …), or of one folder in it. For example the originals of
+Meldgrove Library: with `STORAGE_DRIVER=s3` (the default of its compose
+file), Library keeps the uploaded files in a bucket, which its backup agent
+does not see, and Library's deployment guide asks for a second copy of that
+bucket. Back up Library's bucket with this source, and its database with an
+app source.
+
+rclone copies the objects into Backups' local copy (`/data/staging`); each
+run fetches only the objects whose size or upload time changed. restic then
+saves the copy as a snapshot.
+
+1. **A key that may only read the bucket:** list and read its objects
+   (`s3:ListBucket`, `s3:GetObject`); Backups never writes to it. Hetzner's
+   keys are valid for every bucket of their project, and whether Hetzner can
+   limit a key to reading one bucket is not verified. A key that may also
+   write works, but then a taken-over Backups server could change the bucket.
+2. In Backups, add a source of the kind **S3 bucket**: the endpoint (e.g.
+   `https://fsn1.your-objectstorage.com`), the region if the provider needs
+   one, the bucket's name, optionally a folder in it (only the objects under
+   it), and the key. The secret key is stored encrypted and never shown
+   again.
+3. **Test** counts the objects and their size. The first backup checks that
+   the data volume has room for the copy, and refuses otherwise.
+
+Objects that cannot be copied are listed in the run's log, and the run ends
+with a warning; the rest is saved. When the bucket refuses the whole copy
+(wrong key, missing bucket), the run fails and saves nothing, so an old copy
+is never saved as if it were new. A folder that does not exist counts as
+empty: **Test** then says that it found no objects.
+
+Like Google Drive, the copy needs as much disk space as the bucket holds,
+and it is not encrypted on Backups' server; the snapshots in the target
+are.
+
 ## This app
 
 The app backs up its own database every day during the upkeep (tag
