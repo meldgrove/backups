@@ -88,7 +88,8 @@ Release builds upload the source maps to the Sentry project
 
 The versions of restic and rclone are build arguments in the `Dockerfile`,
 with their SHA-256 checksums; update them by hand (Dependabot does not see
-them), together with `RESTIC_VERSION` and `RCLONE_VERSION` in
+them), together with `RESTIC_VERSION` and `RCLONE_RELEASE` (not
+`RCLONE_VERSION`: rclone reads `RCLONE_*` variables as its flags) in
 `.github/workflows/ci.yml`.
 
 ## Data, secrets and privacy
