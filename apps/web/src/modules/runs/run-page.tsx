@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@meldgrove/ui/confirm-dialog";
 import { ErrorState, LoadingState } from "@meldgrove/ui/states";
 import type { RunDetail } from "@backups/shared/api/runs";
 import { Detail, Details } from "@/components/detail";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { isActive, RunStatusBadge } from "@/components/status";
 import { When } from "@/components/when";
 import { useT } from "@/i18n";

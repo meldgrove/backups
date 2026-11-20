@@ -18,7 +18,7 @@ import {
   type TestResult,
 } from "@backups/shared/api/notifications";
 import { describedBy, FormErrors, SwitchField, TextField } from "@/components/form-fields";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { ToneBadge } from "@/components/status";
 import { When } from "@/components/when";
 import { useT } from "@/i18n";

@@ -4,7 +4,7 @@ import { Card } from "@meldgrove/ui/card";
 import { Pager } from "@meldgrove/ui/pager";
 import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@meldgrove/ui/table";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { When } from "@/components/when";
 import { useT } from "@/i18n";
 import { auditQuery } from "./api";

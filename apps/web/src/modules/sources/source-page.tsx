@@ -22,7 +22,7 @@ import { ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@meldgrove/ui/table";
 import { SOURCE_KIND_LABELS, type Source, type SourceTest } from "@backups/shared/api/sources";
 import { Detail, Details } from "@/components/detail";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { SourceStatusBadge } from "@/components/status";
 import { When } from "@/components/when";
 import { useT } from "@/i18n";
