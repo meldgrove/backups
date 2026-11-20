@@ -67,11 +67,22 @@ describe("source form", () => {
       config: {},
     });
 
+    // The token stays hidden; the copy buttons copy it as it is.
     const dialog = await screen.findByRole("dialog", { name: "Connect the app's backup agent" });
-    expect(within(dialog).getByLabelText("Agent token")).toHaveValue(TOKEN);
-    expect(within(dialog).getByLabelText("Lines for the .env file")).toHaveTextContent(
-      `BACKUP_URL=${window.location.origin} BACKUP_TOKEN=${TOKEN}`,
+    const token = within(dialog).getByLabelText("Agent token");
+    expect(token).toHaveValue(TOKEN);
+    expect(token).toHaveAttribute("type", "password");
+    const lines = within(dialog).getByLabelText("Lines for the .env file");
+    expect(lines).toHaveTextContent(`BACKUP_URL=${window.location.origin} BACKUP_TOKEN=••••••••`);
+    expect(lines).not.toHaveTextContent(TOKEN);
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+    expect(await navigator.clipboard.readText()).toBe(TOKEN);
+    await user.click(within(dialog).getByRole("button", { name: "Copy lines" }));
+    expect(await navigator.clipboard.readText()).toBe(
+      `BACKUP_URL=${window.location.origin}\nBACKUP_TOKEN=${TOKEN}`,
     );
+    await user.click(within(dialog).getByRole("button", { name: "Show" }));
+    expect(token).toHaveAttribute("type", "text");
     expect(dialog).toHaveTextContent("The app's compose file must contain the backup-agent service");
     await user.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/sources/${IDS.app}`));
@@ -130,13 +141,27 @@ describe("source form", () => {
     await user.click(screen.getByRole("button", { name: "Remove folder 3" }));
     expect(screen.queryByLabelText("Folder ID 3")).not.toBeInTheDocument();
 
-    // The client ID for domain-wide delegation shows as soon as the key is pasted.
+    // The key is hidden. Pasted with its line breaks, it loses them, and the client ID for
+    // domain-wide delegation shows at once.
     expect(screen.getByText("The client ID shows here once a key is pasted.")).toBeVisible();
-    await user.click(screen.getByLabelText("Service account key (JSON)"));
+    const key = screen.getByLabelText("Service account key (JSON)");
+    expect(key).toHaveAttribute("type", "password");
+    await user.click(key);
     await user.paste(
-      JSON.stringify({ type: "service_account", client_id: "998877665544", client_email: "sa@p.iam" }),
+      JSON.stringify(
+        {
+          type: "service_account",
+          client_id: "998877665544",
+          client_email: "sa@p.iam",
+          private_key: "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n",
+        },
+        null,
+        2,
+      ),
     );
     expect(screen.getByText("998877665544")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show" }));
+    expect(key).toHaveAttribute("type", "text");
     expect(screen.getByText("https://www.googleapis.com/auth/drive.readonly")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Add source" }));
@@ -152,7 +177,12 @@ describe("source form", () => {
         ],
       },
     });
-    expect(body.secrets).toEqual({ serviceAccountKey: expect.stringContaining("998877665544") });
+    const pasted = (body.secrets as { serviceAccountKey: string }).serviceAccountKey;
+    expect(pasted).not.toContain("\n");
+    expect(JSON.parse(pasted)).toMatchObject({
+      client_id: "998877665544",
+      private_key: expect.stringContaining("PRIVATE KEY"),
+    });
 
     expect(await screen.findByText("This user is not in the Workspace")).toBeVisible();
     expect(screen.getByLabelText("Workspace user to act as")).toHaveAttribute("aria-invalid", "true");

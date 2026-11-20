@@ -30,6 +30,7 @@ describe("notifications page", () => {
     const recipients = await screen.findByLabelText("Recipients");
     expect(recipients).toHaveValue("it@example.org");
     expect(screen.getByText("Stored (…pw12)")).toBeVisible();
+    expect(screen.getByLabelText("Heartbeat URL")).toHaveAttribute("type", "password");
     await user.type(recipients, "\nceo@example.org\n");
     await user.selectOptions(screen.getByLabelText("Security"), "tls");
     await user.clear(screen.getByLabelText("Port"));

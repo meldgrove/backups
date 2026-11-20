@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from "@meldgrove/ui/dialog";
 import { Field, FieldLabel } from "@meldgrove/ui/field";
-import { Input } from "@meldgrove/ui/input";
+import { SecretInput } from "@meldgrove/ui/secret-input";
 import { Spinner } from "@meldgrove/ui/spinner";
 import type { Retention, Schedule } from "@backups/shared/api/schedule";
 import type { Source, SourceKind } from "@backups/shared/api/sources";
@@ -124,7 +124,10 @@ export function envLines(token: string): string {
   return `BACKUP_URL=${window.location.origin}\nBACKUP_TOKEN=${token}`;
 }
 
-/** Shows a new agent token once, with the .env lines for the app's server. */
+/** Stands for the token in the .env lines on screen; "Copy lines" copies the real token. */
+const TOKEN_MASK = "••••••••";
+
+/** Shows a new agent token once, hidden, with the .env lines for the app's server. */
 export function AgentTokenDialog(props: { token: string | null; onDone: () => void }) {
   const t = useT(messages);
   const lines = props.token ? envLines(props.token) : "";
@@ -141,23 +144,21 @@ export function AgentTokenDialog(props: { token: string | null; onDone: () => vo
         </Alert>
         <Field>
           <FieldLabel htmlFor="agent-token">{t("token")}</FieldLabel>
-          <div className="flex gap-2">
-            <Input
-              id="agent-token"
-              readOnly
-              value={props.token ?? ""}
-              className="font-mono text-xs"
-              onFocus={(event) => event.target.select()}
-            />
-            {props.token ? <CopyButton text={props.token} /> : null}
-          </div>
+          <SecretInput
+            id="agent-token"
+            readOnly
+            copyable
+            value={props.token ?? ""}
+            inputClassName="font-mono text-xs"
+            onFocus={(event) => event.target.select()}
+          />
         </Field>
         <div className="grid gap-2">
           <pre
             aria-label={t("envLinesLabel")}
             className="bg-muted overflow-x-auto rounded-md px-3 py-2 font-mono text-xs"
           >
-            {lines}
+            {envLines(TOKEN_MASK)}
           </pre>
           <div>
             <CopyButton text={lines} label={t("copyLines")} />

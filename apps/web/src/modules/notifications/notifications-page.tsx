@@ -278,7 +278,8 @@ function NotificationsForm({ saved }: { saved: Notifications }) {
             id="heartbeat-url"
             label={t("heartbeatUrl")}
             hint={t("heartbeatUrlHint")}
-            type="url"
+            // The URL is the monitor's credential: whoever has it can send pings.
+            type="password"
             autoComplete="off"
             placeholder="https://hc-ping.com/…"
             value={values.heartbeatUrl}
