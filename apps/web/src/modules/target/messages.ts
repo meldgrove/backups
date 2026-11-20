@@ -77,6 +77,8 @@ export const messages = defineMessages({
     objectLockMode: "{mode}, {days} days",
     objectLockTip:
       "Object Lock must be enabled when the bucket is created. It keeps data from being deleted, even with the bucket's keys. To use it, create a new bucket with Object Lock and move the target there.",
+    governanceNote:
+      "In governance mode, a key with the bypass permission can delete locked data early. Compliance mode lets nobody do that.",
     lifecycle: "Lifecycle rules",
     noncurrent: "Old versions deleted after {days} days",
     noncurrentMissing: "Old versions are never deleted",

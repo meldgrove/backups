@@ -91,6 +91,7 @@ describe("target page", () => {
     expect(await screen.findByText("Ready")).toBeVisible();
     expect(screen.getByText("s3:https://fsn1.your-objectstorage.com/acme-backups")).toBeVisible();
     expect(screen.getByText("On (Compliance, 30 days)")).toBeVisible();
+    expect(screen.queryByText(/In governance mode/)).not.toBeInTheDocument();
     expect(screen.getByText("Old versions deleted after 31 days")).toBeVisible();
     expect(screen.getByText("Read and verified 5% of the data")).toBeVisible();
     expect(screen.getByText("42 GB")).toBeVisible();
@@ -103,6 +104,27 @@ describe("target page", () => {
     await waitFor(() => expect(requests(fetch, "POST /target/recovery-kit/confirm")).toHaveLength(1));
     expect(await screen.findByText("Stored")).toBeVisible();
     expect(screen.queryByRole("button", { name: "I stored the recovery kit" })).not.toBeInTheDocument();
+  });
+
+  it("says that governance mode can be bypassed", async () => {
+    const ready = target();
+    stubApi({
+      "GET /target": {
+        body: target({
+          protection: {
+            ...ready.protection!,
+            objectLock: { enabled: true, mode: "GOVERNANCE", days: 30 },
+          },
+        }),
+      },
+    });
+    renderPage(<TargetPage />);
+    expect(await screen.findByText("On (Governance, 30 days)")).toBeVisible();
+    expect(
+      screen.getByText(
+        "In governance mode, a key with the bypass permission can delete locked data early. Compliance mode lets nobody do that.",
+      ),
+    ).toBeVisible();
   });
 
   it("recommends what the bucket lacks", async () => {
