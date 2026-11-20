@@ -148,9 +148,28 @@ describe("target page", () => {
     renderPage(<TargetPage />);
     expect(await screen.findByText(/Object Lock must be enabled when the bucket is created/)).toBeVisible();
     expect(screen.getByText(/Turn on versioning/)).toBeVisible();
-    expect(screen.getByText(/aws s3api put-bucket-lifecycle-configuration/)).toHaveTextContent(
-      "--bucket acme-backups",
-    );
+    const command = screen.getByText(/aws s3api put-bucket-lifecycle-configuration/);
+    expect(command).toHaveTextContent("--bucket acme-backups");
+    expect(command).toHaveTextContent("--region fsn1");
+    // The rules are in the command itself, as valid JSON: it runs as shown.
+    const rules = /--lifecycle-configuration '([^']+)'/.exec(command.textContent ?? "")?.[1];
+    expect(JSON.parse(rules ?? "null")).toEqual({
+      Rules: [
+        {
+          ID: "old-versions",
+          Status: "Enabled",
+          Filter: { Prefix: "" },
+          NoncurrentVersionExpiration: { NoncurrentDays: 31 },
+          AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 },
+        },
+        {
+          ID: "delete-markers",
+          Status: "Enabled",
+          Filter: { Prefix: "" },
+          Expiration: { ExpiredObjectDeleteMarker: true },
+        },
+      ],
+    });
   });
 
   it("saves the bucket, keeping the stored secret key", async () => {

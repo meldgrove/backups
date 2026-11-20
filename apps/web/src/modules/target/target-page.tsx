@@ -448,11 +448,18 @@ function ProtectionCard({ target }: { target: Target }) {
   const t = useT(messages);
   const protection = target.protection;
   const lifecycle = protection?.lifecycle ?? null;
+  // The rules of docs/deployment.md, inline, so that the command runs as shown.
   const command = [
     "aws s3api put-bucket-lifecycle-configuration \\",
     `  --endpoint-url ${target.endpoint ?? "<endpoint>"} \\`,
+    `  --region ${target.region || "us-east-1"} \\`,
     `  --bucket ${target.bucket ?? "<bucket>"} \\`,
-    "  --lifecycle-configuration file://lifecycle.json",
+    `  --lifecycle-configuration '{"Rules":[`,
+    `    {"ID":"old-versions","Status":"Enabled","Filter":{"Prefix":""},`,
+    `     "NoncurrentVersionExpiration":{"NoncurrentDays":31},`,
+    `     "AbortIncompleteMultipartUpload":{"DaysAfterInitiation":7}},`,
+    `    {"ID":"delete-markers","Status":"Enabled","Filter":{"Prefix":""},`,
+    `     "Expiration":{"ExpiredObjectDeleteMarker":true}}]}'`,
   ].join("\n");
   return (
     <Card>

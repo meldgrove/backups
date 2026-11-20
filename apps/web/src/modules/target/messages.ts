@@ -87,7 +87,7 @@ export const messages = defineMessages({
     multipart: "Incomplete uploads removed after {days} days",
     multipartMissing: "Incomplete uploads stay",
     lifecycleTip:
-      "Lifecycle rules clean up after restic deletes old data. They are set through the S3 API, for example:",
+      "Lifecycle rules clean up what restic deletes: old versions 31 days later, leftover delete markers, and incomplete uploads after 7 days. Set them through the S3 API, for example with the AWS command line, with the bucket's keys in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. This replaces the bucket's current lifecycle rules.",
     protectionError: "Some settings could not be read: {message}",
     // Stats
     statsTitle: "Repository",
