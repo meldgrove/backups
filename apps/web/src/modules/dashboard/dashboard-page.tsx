@@ -9,7 +9,7 @@ import type { Attention, Dashboard } from "@backups/shared/api/dashboard";
 import type { Run } from "@backups/shared/api/runs";
 import type { Target } from "@backups/shared/api/target";
 import { Detail, Details } from "@/components/detail";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { RunStatusBadge, ToneBadge } from "@/components/status";
 import { When } from "@/components/when";
 import { useT } from "@/i18n";

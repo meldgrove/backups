@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { SOURCE_KIND_LABELS, SOURCE_KINDS, type SourceKind } from "@backups/shared/api/sources";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { useT } from "@/i18n";
 import { sourceQuery } from "./api";
 import { messages } from "./messages";

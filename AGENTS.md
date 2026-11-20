@@ -15,7 +15,8 @@ npm workspaces, Node.js 26, strict TypeScript.
   on PostgreSQL, restic and rclone as child processes, aws4fetch (bucket
   settings), croner (schedules), nodemailer, pino logs, Sentry, Vitest.
 - `apps/web`: Vite + React 19, TanStack Router and Query, Tailwind CSS 4
-  with `@meldgrove/ui` (theme, components, update button). US English.
+  with `@meldgrove/ui` (theme, components, the app frame, page layout,
+  sign-in page, update button). US English.
 - `packages/shared` (`@backups/shared/*`): zod schemas of the API
   (`api/*.ts`), schedules and retention, error-report redaction.
 
@@ -39,7 +40,8 @@ apps/server/src/
   alerts/          email alerts and the heartbeat
   http/            app factory, middleware, errors
   modules/         one file per API area: routes
-apps/web/src/      web app; modules/<area> holds each area's pages
+apps/web/src/      web app; modules/<area> holds each area's pages; app/navigation.ts
+                   the sidebar, its keys and the breadcrumbs of the frame (AppFrame)
 packages/shared/src/  contracts, schedules
 ```
 

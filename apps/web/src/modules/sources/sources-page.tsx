@@ -4,7 +4,7 @@ import { HardDrive, Plus } from "lucide-react";
 import { Button } from "@meldgrove/ui/button";
 import { Card } from "@meldgrove/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { useT } from "@/i18n";
 import { sourcesQuery } from "./api";
 import { messages } from "./messages";

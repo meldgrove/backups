@@ -6,7 +6,7 @@ import { NativeSelect, NativeSelectOption } from "@meldgrove/ui/native-select";
 import { Pager } from "@meldgrove/ui/pager";
 import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { runKindSchema, type RunKind } from "@backups/shared/api/runs";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { useT } from "@/i18n";
 import { sourcesQuery } from "@/modules/sources/api";
 import { runsQuery } from "./api";
