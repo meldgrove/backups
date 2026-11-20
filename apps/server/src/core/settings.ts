@@ -18,13 +18,25 @@ export async function writeSetting<T>(db: DbOrTx, key: string, value: T): Promis
     .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: sql`now()` } });
 }
 
-/** Changes a stored value with `change` (null when there is none yet) inside one statement's transaction. */
+/** Changes a stored value with `change` (null when there is none yet), with its row locked meanwhile. */
 export async function updateSetting<T>(
   db: DbOrTx,
   key: string,
   change: (current: T | null) => T,
 ): Promise<T> {
-  const next = change(await readSetting<T>(db, key));
-  await writeSetting(db, key, next);
-  return next;
+  return db.transaction(async (tx) => {
+    const next = change(await readSettingForUpdate<T>(tx, key));
+    await writeSetting(tx, key, next);
+    return next;
+  });
+}
+
+/** Reads a value and locks its row until the transaction ends (read, compare, write without a race). */
+export async function readSettingForUpdate<T>(tx: DbOrTx, key: string): Promise<T | null> {
+  const [row] = await tx
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, key))
+    .for("update");
+  return (row?.value as T | undefined) ?? null;
 }

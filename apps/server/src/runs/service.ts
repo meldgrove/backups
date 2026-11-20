@@ -156,9 +156,16 @@ export async function anyRunning(db: DbOrTx, kinds: RunKind[]): Promise<boolean>
   return Boolean(row);
 }
 
-/** The newest run of a kind (upkeep, this app's own backup). */
-export async function latestRun(db: DbOrTx, kind: RunKind): Promise<Run | null> {
-  const [row] = await selectRuns(db).where(eq(runs.kind, kind)).orderBy(desc(runs.queuedAt)).limit(1);
+/** The newest run of a kind (upkeep, this app's own backup); with `finished`, the newest that ended. */
+export async function latestRun(
+  db: DbOrTx,
+  kind: RunKind,
+  options: { finished?: boolean } = {},
+): Promise<Run | null> {
+  const where = options.finished
+    ? and(eq(runs.kind, kind), inArray(runs.status, ["succeeded", "warning", "failed"]))
+    : eq(runs.kind, kind);
+  const [row] = await selectRuns(db).where(where).orderBy(desc(runs.queuedAt)).limit(1);
   return row ? runView(row.run, row.sourceName, row.sourceKind) : null;
 }
 

@@ -85,10 +85,17 @@ export async function saveNotifications(
 
 export type Mail = { subject: string; text: string };
 
-/** Sends a mail to every recipient; throws a readable error. */
-export async function sendMail(db: DbOrTx, mail: Mail, options: { evenWhenOff?: boolean } = {}) {
+/**
+ * Sends a mail to every recipient; throws a readable error. False when email
+ * is off (nothing was sent: an alert then waits until it is on).
+ */
+export async function sendMail(
+  db: DbOrTx,
+  mail: Mail,
+  options: { evenWhenOff?: boolean } = {},
+): Promise<boolean> {
   const settings = (await stored(db)).email;
-  if (!settings.enabled && !options.evenWhenOff) return;
+  if (!settings.enabled && !options.evenWhenOff) return false;
   if (!settings.host || !settings.from || settings.recipients.length === 0) {
     throw new Error("Set the SMTP server, the sender and at least one recipient");
   }
@@ -121,6 +128,7 @@ export async function sendMail(db: DbOrTx, mail: Mail, options: { evenWhenOff?: 
   } finally {
     transport.close();
   }
+  return true;
 }
 
 /** Calls the heartbeat URL. */
@@ -186,7 +194,8 @@ export async function checkAlerts(db: Db, now = new Date()) {
     ["maintenance", "The daily upkeep of the backup repository"],
     ["self", "The backup of this app's own database"],
   ] as const) {
-    const run = await latestRun(db, kind);
+    // The newest finished run: a retry that is queued or running does not count yet.
+    const run = await latestRun(db, kind, { finished: true });
     if (run?.status !== "failed") continue;
     healthy = false;
     if (systemAlert[kind] === run.id) continue;
@@ -212,11 +221,10 @@ export async function checkAlerts(db: Db, now = new Date()) {
   }
 }
 
-/** Sends an alert; false when it could not be sent (it is tried again at the next check). */
+/** Sends an alert; false when it was not sent (it is tried again at the next check). */
 async function sendSafely(db: Db, mail: Mail): Promise<boolean> {
   try {
-    await sendMail(db, mail);
-    return true;
+    return await sendMail(db, mail);
   } catch (error) {
     logger.warn({ err: error }, "alert email not sent");
     return false;

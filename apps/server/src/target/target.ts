@@ -5,7 +5,7 @@ import { config } from "../config";
 import type { DbOrTx } from "../db/client";
 import { audit } from "../core/audit";
 import { decryptSecret, encryptSecret, randomSecret, secretHint } from "../core/crypto";
-import { readSetting, writeSetting } from "../core/settings";
+import { readSetting, readSettingForUpdate, writeSetting } from "../core/settings";
 import { conflict, validationError } from "../http/errors";
 import type { UserPrincipal } from "../auth/principal";
 import { initRepository, probeRepository, repositoryUrl, type Repository } from "../restic/restic";
@@ -21,6 +21,11 @@ export type StoredTarget = {
   secretAccessKey: string;
   /** The repository password; null until a repository is created or connected. */
   password: string | null;
+  /**
+   * The password of a repository being created: stored before `restic init`
+   * runs, and promoted to `password` once the repository exists.
+   */
+  pendingPassword?: string | null;
   repository: { state: RepositoryState; message: string | null; checkedAt: string | null };
   recoveryKitConfirmedAt: string | null;
   protection: BucketProtection | null;
@@ -105,7 +110,15 @@ export async function saveTarget(
   input: z.output<typeof targetInputSchema>,
   actor: UserPrincipal,
 ): Promise<void> {
-  const current = await readTarget(db);
+  await db.transaction((tx) => saveTargetLocked(tx, input, actor));
+}
+
+async function saveTargetLocked(
+  db: DbOrTx,
+  input: z.output<typeof targetInputSchema>,
+  actor: UserPrincipal,
+): Promise<void> {
+  const current = await readSettingForUpdate<StoredTarget>(db, TARGET_KEY);
   if (!current && !input.secretAccessKey) throw validationError({ secretAccessKey: "Enter the secret key" });
   const endpoint = input.endpoint.replace(/\/+$/, "");
   const moved = !current || !sameLocation(current, { endpoint, bucket: input.bucket, prefix: input.prefix });
@@ -118,6 +131,7 @@ export async function saveTarget(
     accessKeyId: input.accessKeyId,
     secretAccessKey: input.secretAccessKey ? encryptSecret(input.secretAccessKey) : current!.secretAccessKey,
     password: current?.password ?? null,
+    pendingPassword: current?.pendingPassword ?? null,
     repository:
       moved || keysChanged || !current
         ? { state: "unknown", message: null, checkedAt: null }
@@ -139,7 +153,8 @@ const sameTarget = (a: StoredTarget, b: StoredTarget | null) =>
   repositoryUrl(a) === repositoryUrl(b) &&
   a.accessKeyId === b.accessKeyId &&
   a.secretAccessKey === b.secretAccessKey &&
-  a.password === b.password;
+  a.password === b.password &&
+  (a.pendingPassword ?? null) === (b.pendingPassword ?? null);
 
 /**
  * Stores a change made after network calls, on the target as it is now, and
@@ -151,10 +166,12 @@ async function updateIfUnchanged(
   used: StoredTarget,
   change: Partial<StoredTarget>,
 ): Promise<boolean> {
-  const current = await readTarget(db);
-  if (!sameTarget(used, current)) return false;
-  await writeSetting(db, TARGET_KEY, { ...current!, ...change });
-  return true;
+  return db.transaction(async (tx) => {
+    const current = await readSettingForUpdate<StoredTarget>(tx, TARGET_KEY);
+    if (!sameTarget(used, current)) return false;
+    await writeSetting(tx, TARGET_KEY, { ...current!, ...change });
+    return true;
+  });
 }
 
 const changedMeanwhile = () => conflict("The target changed meanwhile. Try again.", "target_changed");
@@ -169,13 +186,13 @@ export async function testTarget(db: DbOrTx): Promise<void> {
   const checkedAt = new Date().toISOString();
   // Without a password restic cannot tell a missing repository from one it cannot open:
   // probe with a throwaway password and report "missing" or "exists".
-  const password = target.password ? decryptSecret(target.password) : randomSecret();
+  const stored = target.password ?? target.pendingPassword ?? null;
   const probe = await probeRepository({
     url: repositoryUrl(target),
     accessKeyId: target.accessKeyId,
     secretAccessKey,
     region: target.region,
-    password,
+    password: stored ? decryptSecret(stored) : randomSecret(),
   });
   if (probe.state === "error") repository = { state: "error", message: probe.message, checkedAt };
   else if (probe.state === "wrong_password" && !target.password) {
@@ -185,7 +202,12 @@ export async function testTarget(db: DbOrTx): Promise<void> {
       checkedAt,
     };
   } else repository = { state: probe.state, message: null, checkedAt };
-  await updateIfUnchanged(db, target, { repository, protection });
+  // A repository an earlier creation made with the pending password: it is this one.
+  const created =
+    !target.password && target.pendingPassword && probe.state === "ready"
+      ? { password: target.pendingPassword, pendingPassword: null, recoveryKitConfirmedAt: null }
+      : {};
+  await updateIfUnchanged(db, target, { repository, protection, ...created });
 }
 
 /** Creates a new repository at the target, with a new password unless one is stored. */
@@ -200,14 +222,18 @@ export async function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promis
   if (target.repository.state === "error") {
     throw conflict(target.repository.message ?? "The bucket cannot be reached", "target_unreachable");
   }
-  // The password is stored before restic uses it: a repository must never exist
-  // without its password being kept.
+  // The password is stored (as pending) before restic uses it: a repository must
+  // never exist without its password being kept. Only a created repository
+  // makes it the password that backups and the recovery kit use.
   let used = target;
-  if (!target.password) {
-    used = { ...target, password: encryptSecret(randomSecret(32)) };
-    if (!(await updateIfUnchanged(db, target, { password: used.password }))) throw changedMeanwhile();
+  if (!target.password && !target.pendingPassword) {
+    used = { ...target, pendingPassword: encryptSecret(randomSecret(32)) };
+    if (!(await updateIfUnchanged(db, target, { pendingPassword: used.pendingPassword }))) {
+      throw changedMeanwhile();
+    }
   }
-  const password = decryptSecret(used.password!);
+  const stored = used.password ?? used.pendingPassword!;
+  const password = decryptSecret(stored);
   await initRepository({
     url: repositoryUrl(target),
     accessKeyId: target.accessKeyId,
@@ -216,6 +242,8 @@ export async function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promis
     password,
   });
   const ready = await updateIfUnchanged(db, used, {
+    password: stored,
+    pendingPassword: null,
     repository: { state: "ready", message: null, checkedAt: new Date().toISOString() },
     recoveryKitConfirmedAt: null,
   });
@@ -245,6 +273,7 @@ export async function connectTarget(db: DbOrTx, password: string, actor: UserPri
   if (probe.state === "error") throw conflict(probe.message, "target_unreachable");
   const connected = await updateIfUnchanged(db, target, {
     password: encryptSecret(password),
+    pendingPassword: null,
     repository: { state: "ready", message: null, checkedAt: new Date().toISOString() },
     recoveryKitConfirmedAt: null,
   });

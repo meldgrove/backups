@@ -6,6 +6,7 @@ import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
 import { getDb } from "../db/client";
 import { backupDirectory, listSnapshots, sourceTag } from "../restic/restic";
 import { openRepository } from "../target/target";
+import { forgetDeletedSources } from "../worker/maintenance";
 import { createUser, request, resetDatabase, setUpTarget, testApp } from "../test/helpers";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
@@ -184,7 +185,11 @@ describe("sources", () => {
       ).status,
     ).toBe(204);
     expect(await listSnapshots(repository, sourceTag(keep.body.source.id))).toHaveLength(1);
+    // The next upkeep forgets them.
+    expect(await listSnapshots(repository, sourceTag(forget.body.source.id))).toHaveLength(1);
+    expect(await forgetDeletedSources(getDb(), repository)).toEqual([]);
     expect(await listSnapshots(repository, sourceTag(forget.body.source.id))).toHaveLength(0);
+    expect(await listSnapshots(repository, sourceTag(keep.body.source.id))).toHaveLength(1);
     expect((await request("GET", "/api/v1/sources", { userId: admin.id })).body.items).toEqual([]);
   });
 });

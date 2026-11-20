@@ -59,6 +59,7 @@ describe("Google Drive", () => {
       '{"level":"critical","msg":"Failed to sync: googleapi: Error 403: cannotDownloadFile"}',
       '{"level":"notice","msg":"Duplicate object found in source - ignoring","object":"Board/minutes.docx"}',
       '{"level":"critical","msg":"Failed to create file system: token https://user:secret@x invalid"}',
+      '{"level":"error","msg":"error reading source root directory: googleapi: Error 403","object":"Board"}',
       "",
     ].join("\n");
     expect(parseRcloneLog(log)).toEqual({
@@ -81,6 +82,12 @@ describe("Google Drive", () => {
         {
           message: "Failed to create file system: token https://***@x invalid",
           object: null,
+          kind: "general",
+        },
+        // A folder that could not be listed: its copy may be old, so the whole copy fails.
+        {
+          message: "error reading source root directory: googleapi: Error 403",
+          object: "Board",
           kind: "general",
         },
       ],

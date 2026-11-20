@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { Hono } from "hono";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   SNAPSHOT_ID,
   sourceDeleteQuerySchema,
@@ -12,15 +12,16 @@ import {
   type SourceTest,
 } from "@backups/shared/api/sources";
 import { getDb } from "../db/client";
-import { runs, sources } from "../db/schema";
+import { sources } from "../db/schema";
 import type { AppEnv } from "../http/env";
 import { conflict, notFound } from "../http/errors";
 import { idParam, jsonBody, queryOf, requireAdmin } from "../http/middleware";
 import { audit } from "../core/audit";
 import { logger } from "../logger";
-import { activeRunOf, createRun, runView } from "../runs/service";
-import { dumpSnapshot, forgetSnapshots, listSnapshots, sourceTag, type SnapshotInfo } from "../restic/restic";
+import { activeRunOf, createRun, lockClaims, runView } from "../runs/service";
+import { dumpSnapshot, listSnapshots, sourceTag, type SnapshotInfo } from "../restic/restic";
 import { openRepository } from "../target/target";
+import { queueForget } from "../worker/maintenance";
 import { STREAM_FILENAME } from "../sources/agent";
 import { stagingDir, testDrive } from "../sources/google-drive";
 import { testPersonio } from "../sources/personio";
@@ -72,29 +73,18 @@ router.delete("/sources/:id", async (c) => {
   const { snapshots } = queryOf(c, sourceDeleteQuerySchema);
   const db = getDb();
   const row = await getSourceRow(db, id);
-  // First stop new runs: nothing may claim one while the snapshots are forgotten.
-  await db.update(sources).set({ enabled: false }).where(eq(sources.id, id));
-  await db
-    .update(runs)
-    .set({ status: "cancelled", finishedAt: sql`now()`, error: "The source is being deleted" })
-    .where(and(eq(runs.sourceId, id), eq(runs.status, "queued")));
-  const active = await activeRunOf(db, id);
-  if (active?.status === "running") {
-    await db.update(sources).set({ enabled: row.enabled }).where(eq(sources.id, id));
-    throw conflict("A backup of this source is running. Cancel it first.", "run_active");
-  }
-  let forgotten = 0;
-  if (snapshots === "forget") {
-    const repository = await openRepository(db);
-    const list = await listSnapshots(repository, sourceTag(id));
-    await forgetSnapshots(
-      repository,
-      list.map((item) => item.id),
-      AbortSignal.timeout(10 * 60_000),
-    );
-    forgotten = list.length;
-  }
-  await db.delete(sources).where(eq(sources.id, id));
+  // Under the claims' lock: no run of the source starts while it is deleted, and
+  // with the source its queued runs go (cascade).
+  await db.transaction(async (tx) => {
+    await lockClaims(tx);
+    const active = await activeRunOf(tx, id);
+    if (active?.status === "running") {
+      throw conflict("A backup of this source is running. Cancel it first.", "run_active");
+    }
+    await tx.delete(sources).where(eq(sources.id, id));
+    // The next upkeep forgets the snapshots (it may wait for the repository).
+    if (snapshots === "forget") await queueForget(tx, sourceTag(id));
+  });
   await rm(stagingDir(id), { recursive: true, force: true }).catch(() => undefined);
   await audit(db, actor, {
     action: "source.delete",
@@ -102,7 +92,7 @@ router.delete("/sources/:id", async (c) => {
     entityId: id,
     summary:
       snapshots === "forget"
-        ? `Deleted the source ${row.name} and forgot its ${forgotten} snapshot(s)`
+        ? `Deleted the source ${row.name}; the next upkeep forgets its snapshots`
         : `Deleted the source ${row.name}; its snapshots stay in the repository`,
   });
   return c.body(null, 204);

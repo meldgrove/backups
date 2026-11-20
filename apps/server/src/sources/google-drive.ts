@@ -66,6 +66,8 @@ type RcloneResult = { code: number | null; stdout: string; errors: RcloneError[]
 export type RcloneError = { message: string; object: string | null; kind: "item" | "summary" | "general" };
 
 const SUMMARY = /^(Attempt \d+\/\d+ failed with \d+ errors|Failed to (sync|copy)(:| with \d+ errors))/;
+/** A folder could not be listed: what the copy holds of it may be old, so the copy fails. */
+const LISTING = /error reading (source|destination)|couldn't list|directory not found/i;
 const DUPLICATE = /^Duplicate (object|directory) found in source/;
 
 /** Reads rclone's JSON log (stderr, --use-json-log): the errors, and the items skipped as duplicates. */
@@ -84,7 +86,13 @@ export function parseRcloneLog(text: string): { errors: RcloneError[]; duplicate
         errors.push({
           message,
           object,
-          kind: object ? "item" : SUMMARY.test(message) ? "summary" : "general",
+          kind: LISTING.test(message)
+            ? "general"
+            : object
+              ? "item"
+              : SUMMARY.test(message)
+                ? "summary"
+                : "general",
         });
       }
     } catch {

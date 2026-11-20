@@ -1,12 +1,14 @@
 import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
 import { config } from "../config";
-import type { Db } from "../db/client";
+import type { Db, DbOrTx } from "../db/client";
 import { sources, type runs } from "../db/schema";
-import { writeSetting } from "../core/settings";
+import { readSetting, updateSetting, writeSetting } from "../core/settings";
 import { appendLog, type RunOutcome } from "../runs/service";
 import {
   checkRepository,
   forgetByPolicy,
+  forgetSnapshots,
+  listSnapshots,
   prune,
   repositoryStats,
   SELF_TAG,
@@ -16,6 +18,32 @@ import {
 import { REPOSITORY_KEY, testTarget, type RepositoryHealth } from "../target/target";
 
 type RunRow = typeof runs.$inferSelect;
+
+/** Tags of deleted sources whose snapshots the next upkeep forgets. */
+const FORGET_KEY = "forget_tags";
+
+export async function queueForget(db: DbOrTx, tag: string) {
+  await updateSetting<string[]>(db, FORGET_KEY, (tags) => [...new Set([...(tags ?? []), tag])]);
+}
+
+/** Forgets the snapshots of deleted sources (`queueForget`); a tag stays queued until that worked. */
+export async function forgetDeletedSources(db: DbOrTx, repository: Repository, signal?: AbortSignal) {
+  const problems: string[] = [];
+  for (const tag of (await readSetting<string[]>(db, FORGET_KEY)) ?? []) {
+    try {
+      const snapshots = await listSnapshots(repository, tag);
+      await forgetSnapshots(
+        repository,
+        snapshots.map((item) => item.id),
+        signal,
+      );
+      await updateSetting<string[]>(db, FORGET_KEY, (tags) => (tags ?? []).filter((item) => item !== tag));
+    } catch (error) {
+      problems.push(`Forgetting the snapshots of a deleted source: ${(error as Error).message}`);
+    }
+  }
+  return problems;
+}
 
 /** Share of the data read and verified by the weekly check (Sundays); other days check the structure only. */
 export const WEEKLY_READ_DATA = "5%";
@@ -38,6 +66,9 @@ export async function runMaintenance(
   const log = (line: string) => appendLog(db, run.id, line);
   const problems: string[] = [];
   const warnings: string[] = [];
+
+  problems.push(...(await forgetDeletedSources(db, repository, signal)));
+  signal.throwIfAborted();
 
   const all = await db
     .select({ id: sources.id, name: sources.name, retention: sources.retention })
