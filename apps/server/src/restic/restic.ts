@@ -160,6 +160,8 @@ function collectOutput(child: ChildProcessWithoutNullStreams, options: RunOption
 export async function runRestic(repository: Repository, args: string[], options: RunOptions = {}) {
   options.signal?.throwIfAborted();
   await mkdir(cacheDir(), { recursive: true });
+  // An abort may come while the folder is made: never start restic after it.
+  options.signal?.throwIfAborted();
   const child = spawnRestic(repository, args, options.env);
   child.stdin.end();
   const abort = () => stop(child);
