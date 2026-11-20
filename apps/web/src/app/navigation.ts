@@ -11,6 +11,9 @@ export const navMessages = defineMessages({
     notifications: "Notifications",
     audit: "Audit log",
     updates: "Updates",
+    // Breadcrumbs of a source or run until its page has its name.
+    sourceDetails: "Source details",
+    runDetails: "Run details",
   },
 });
 
@@ -58,15 +61,16 @@ export function recordOf(pathname: string): { kind: "source" | "run"; id: string
 
 /**
  * Where a page sits: the sidebar item it belongs to, then the new form or
- * the source or run by its name (once its page has loaded it), then the
- * edit form. Sources and runs have no short numbers. The person's settings
- * are outside the sidebar; other paths get none.
+ * the source or run by its name (until its page has loaded it, "Source
+ * details" or "Run details", so the list stays a link back), then the edit
+ * form. Sources and runs have no short numbers. The person's settings are
+ * outside the sidebar; other paths get none.
  */
 export function breadcrumbsFor(
   pathname: string,
   options: {
     items: { label: string; href: string }[];
-    labels: { newSource: string; edit: string; preferences: string };
+    labels: { newSource: string; edit: string; preferences: string; source: string; run: string };
     /** The name of the source or run the page shows, once loaded. */
     record?: string;
   },
@@ -86,8 +90,9 @@ export function breadcrumbsFor(
   const parent = { label: item.label, href: item.href };
   const [id, below] = path.slice(item.href.length + 1).split("/");
   if (item.href === "/sources" && id === "new" && !below) return [parent, { label: labels.newSource }];
-  if (!recordOf(path)) return [parent];
-  if (below !== "edit") return record ? [parent, { label: record }] : [parent];
+  const shown = recordOf(path);
+  if (!shown) return [parent];
+  if (below !== "edit") return [parent, { label: record ?? labels[shown.kind] }];
   const edit = { label: labels.edit };
   return record ? [parent, { label: record, href: `${item.href}/${id}` }, edit] : [parent, edit];
 }

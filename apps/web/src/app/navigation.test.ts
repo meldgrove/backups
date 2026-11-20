@@ -11,7 +11,13 @@ const items = [
   { label: "Audit log", href: "/admin/audit" },
   { label: "Updates", href: "/admin/updates" },
 ];
-const labels = { newSource: "Add source", edit: "Edit", preferences: "My settings" };
+const labels = {
+  newSource: "Add source",
+  edit: "Edit",
+  preferences: "My settings",
+  source: "Source details",
+  run: "Run details",
+};
 const crumbs = (pathname: string, record?: string) => breadcrumbsFor(pathname, { items, labels, record });
 
 describe("NAVIGATION", () => {
@@ -64,7 +70,14 @@ describe("breadcrumbsFor", () => {
       { label: "Runs", href: "/runs" },
       { label: "Handbook" },
     ]);
-    expect(crumbs(`/sources/${ID}`)).toEqual([{ label: "Sources", href: "/sources" }]);
+  });
+
+  it("keeps the list a link back while the name loads or fails to", () => {
+    expect(crumbs(`/sources/${ID}`)).toEqual([
+      { label: "Sources", href: "/sources" },
+      { label: "Source details" },
+    ]);
+    expect(crumbs(`/runs/${ID}/`)).toEqual([{ label: "Runs", href: "/runs" }, { label: "Run details" }]);
   });
 
   it("leads from the edit form back to its source", () => {

@@ -53,6 +53,14 @@ describe("app frame", () => {
     expect(await within(crumbs).findByText("Handbook")).toHaveAttribute("aria-current", "page");
   });
 
+  it("keeps the list a link back when a source does not load", async () => {
+    // No reply for this source: the page shows its error.
+    renderAt(`/sources/${IDS.drive}`);
+    const crumbs = await screen.findByRole("navigation", { name: "Breadcrumbs" });
+    expect(within(crumbs).getByRole("link", { name: "Sources" })).toHaveAttribute("href", "/sources");
+    expect(within(crumbs).getByText("Source details")).toHaveAttribute("aria-current", "page");
+  });
+
   it("names a run by its source in the breadcrumbs", async () => {
     renderAt(`/runs/${IDS.run}`);
     expect(await screen.findByRole("heading", { level: 1, name: "Handbook" })).toBeInTheDocument();

@@ -58,6 +58,8 @@ export function AppLayout() {
       newSource: tSources("chooseTitle"),
       edit: tCommon("edit"),
       preferences: tPreferences("title"),
+      source: t("sourceDetails"),
+      run: t("runDetails"),
     },
     record,
   });
