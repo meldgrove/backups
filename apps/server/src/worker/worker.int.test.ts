@@ -98,6 +98,23 @@ describe("the worker", () => {
     );
   });
 
+  it("ends a run that was left running, so the next ones start", async () => {
+    // As after a database outage at the end of a run: its end was never saved.
+    const [stuck] = await getDb()
+      .insert(runs)
+      .values({ kind: "self", sourceId: null, trigger: "schedule", status: "running", startedAt: new Date() })
+      .returning();
+    await getDb().insert(runs).values({ kind: "maintenance", sourceId: null, trigger: "schedule" });
+
+    expect(await executeNext(getDb())).toBe(true);
+    const [self] = await getDb().select().from(runs).where(eq(runs.id, stuck!.id));
+    expect(self).toMatchObject({ status: "failed", error: expect.stringMatching(/could not be saved/) });
+    // The upkeep was claimed (it fails here for lack of a target).
+    const [upkeep] = await getDb().select().from(runs).where(eq(runs.kind, "maintenance"));
+    expect(upkeep!.status).toBe("failed");
+    expect(upkeep!.error).toMatch(/Set up the target/);
+  });
+
   it("passes the database settings to pg_dump in the environment, decoded", () => {
     expect(pgEnv("postgres://back%40ups:p%40ss%3Aword@db.example.org:6543/my_db?sslmode=require")).toEqual({
       PGHOST: "db.example.org",
