@@ -63,12 +63,17 @@ export async function claimNextRun(db: Db): Promise<RunRow | null> {
   });
 }
 
-/** Runs that were running when the worker started have lost their process. */
-export async function failInterruptedRuns(db: Db) {
+/**
+ * Runs that count as running although the worker executes none have lost
+ * their process: when the worker starts, and before each claim (a run whose
+ * end the database did not take would otherwise run forever and hold back
+ * the upkeep and its source's next backups). Run a single worker.
+ */
+export async function failInterruptedRuns(db: Db, error = "The worker restarted during the run") {
   const localSources = db.select({ id: sources.id }).from(sources).where(inArray(sources.kind, LOCAL_KINDS));
   const interrupted = await db
     .update(runs)
-    .set({ status: "failed", finishedAt: sql`now()`, error: "The worker restarted during the run" })
+    .set({ status: "failed", finishedAt: sql`now()`, error })
     .where(
       and(
         eq(runs.status, "running"),
@@ -76,7 +81,7 @@ export async function failInterruptedRuns(db: Db) {
       ),
     )
     .returning({ id: runs.id });
-  if (interrupted.length > 0) logger.warn({ count: interrupted.length }, "runs ended by a worker restart");
+  if (interrupted.length > 0) logger.warn({ count: interrupted.length }, "runs without a process ended");
 }
 
 /** libpq's settings from a database URL, so that the password never appears in pg_dump's arguments. */
@@ -178,6 +183,7 @@ export async function executeRun(db: Db, run: RunRow) {
 
 /** One step of the worker: claim and execute the next run, if any. */
 export async function executeNext(db: Db): Promise<boolean> {
+  await failInterruptedRuns(db, "The run ended, but its result could not be saved");
   const run = await claimNextRun(db);
   if (!run) return false;
   await executeRun(db, run);
