@@ -49,7 +49,8 @@ the releases within a series install without anyone acting. Every change on
   in its memory.
 - **`worker`** plans the runs, backs up Google Drive, S3 buckets, Personio
   and the app's own database one at a time, runs the daily upkeep, and
-  sends alerts.
+  sends alerts. Run exactly one `worker`: it ends runs that count as running
+  without it, so a second one would end the first one's.
 
 The image runs as an unprivileged user (uid 1000). `web` listens on port
 3000, published on `127.0.0.1:3000` for a reverse proxy on the same machine;
