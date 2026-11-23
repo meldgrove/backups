@@ -6,7 +6,7 @@
 # The image has restic (backups), rclone (Google Drive, S3 buckets) and pg_dump 18 (this
 # app's own database).
 
-FROM node:26.13.0-bookworm-slim AS base
+FROM node:26.13.1-bookworm-slim AS base
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/server/package.json apps/server/
@@ -64,7 +64,7 @@ RUN set -eu; \
     install -m 0755 "/tmp/rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}/rclone" /usr/local/bin/rclone; \
     curl -fsSL -o /tmp/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
-FROM node:26.13.0-bookworm-slim AS runtime
+FROM node:26.13.1-bookworm-slim AS runtime
 # restic and rclone need the CA certificates for HTTPS; pg_dump 18 comes from
 # the PostgreSQL project's apt repository.
 COPY --from=tools /tmp/pgdg.asc /usr/share/keyrings/pgdg.asc
