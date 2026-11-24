@@ -102,6 +102,10 @@ jobs:
       - name: The image starts its processes
         run: |
           docker run --rm --entrypoint node backups:ci --import /app/apps/server/dist/instrument.mjs -e "process.exit(0)"
+      - name: The image has the operator command
+        run: |
+          docker run --rm backups:ci cli help | grep -q "cli settings apply"
+          docker run --rm --entrypoint cli backups:ci help | grep -q "cli settings apply"
 
   compose-compat:
     # A new image must still start with the compose files of the newest

@@ -1,14 +1,15 @@
 import type { BucketProtection, RepositoryState, Target, TargetInput } from "@backups/shared/api/target";
-import type { targetInputSchema } from "@backups/shared/api/target";
+import type { maintenanceInputSchema, targetInputSchema } from "@backups/shared/api/target";
 import type { z } from "zod";
 import { config } from "../config";
-import type { DbOrTx } from "../db/client";
+import { getPool, type DbOrTx } from "../db/client";
 import { audit } from "../core/audit";
 import { decryptSecret, encryptSecret, randomSecret, secretHint } from "../core/crypto";
 import { readSetting, readSettingForUpdate, writeSetting } from "../core/settings";
 import { conflict, validationError } from "../http/errors";
-import type { UserPrincipal } from "../auth/principal";
+import type { Actor } from "../auth/principal";
 import { initRepository, probeRepository, repositoryUrl, type Repository } from "../restic/restic";
+import { listSourceRows } from "../sources/service";
 import { readBucketProtection } from "./bucket";
 
 /** The target as stored (key `target`); secrets encrypted. */
@@ -46,6 +47,20 @@ export const readTarget = (db: DbOrTx) => readSetting<StoredTarget>(db, TARGET_K
 
 export async function maintenanceTime(db: DbOrTx): Promise<string> {
   return (await readSetting<{ time: string }>(db, MAINTENANCE_KEY))?.time ?? DEFAULT_MAINTENANCE_TIME;
+}
+
+/** Sets the time of the daily upkeep (server time). */
+export async function saveMaintenance(
+  db: DbOrTx,
+  input: z.output<typeof maintenanceInputSchema>,
+  actor: Actor,
+): Promise<void> {
+  await writeSetting(db, MAINTENANCE_KEY, { time: input.maintenanceTime });
+  await audit(db, actor, {
+    action: "maintenance.update",
+    entityType: "target",
+    summary: `Set the daily upkeep to ${input.maintenanceTime}`,
+  });
 }
 
 /** The repository to back up into; null while no target with a repository password is set up. */
@@ -108,7 +123,7 @@ const sameLocation = (a: StoredTarget, b: { endpoint: string; bucket: string; pr
 export async function saveTarget(
   db: DbOrTx,
   input: z.output<typeof targetInputSchema>,
-  actor: UserPrincipal,
+  actor: Actor,
 ): Promise<void> {
   await db.transaction((tx) => saveTargetLocked(tx, input, actor));
 }
@@ -116,7 +131,7 @@ export async function saveTarget(
 async function saveTargetLocked(
   db: DbOrTx,
   input: z.output<typeof targetInputSchema>,
-  actor: UserPrincipal,
+  actor: Actor,
 ): Promise<void> {
   const current = await readSettingForUpdate<StoredTarget>(db, TARGET_KEY);
   if (!current && !input.secretAccessKey) throw validationError({ secretAccessKey: "Enter the secret key" });
@@ -211,22 +226,57 @@ export async function testTarget(db: DbOrTx): Promise<void> {
 }
 
 /**
- * Creating and connecting a repository run one at a time (in the one web
- * process), so that two admins never run `restic init` side by side.
+ * Creating and connecting a repository run one at a time, so that two admins
+ * never run `restic init` side by side: queued in this process, and under a
+ * PostgreSQL advisory lock across processes (the web app and the operator
+ * command).
  */
 let repositoryChange: Promise<unknown> = Promise.resolve();
 function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
-  const next = repositoryChange.then(work, work);
+  const next = repositoryChange.then(
+    () => underRepositoryLock(work),
+    () => underRepositoryLock(work),
+  );
   repositoryChange = next.catch(() => undefined);
   return next;
 }
 
+/** Any fixed number: the key of the advisory lock that creating and connecting a repository hold. */
+const REPOSITORY_LOCK = 4_217_356_901;
+
+async function underRepositoryLock<T>(work: () => Promise<T>): Promise<T> {
+  // A connection of its own: the lock belongs to its session, and no transaction stays open while restic runs.
+  const client = await getPool().connect();
+  let broken: Error | undefined;
+  try {
+    const { rows } = await client.query<{ locked: boolean }>("select pg_try_advisory_lock($1) as locked", [
+      REPOSITORY_LOCK,
+    ]);
+    if (!rows[0]?.locked) {
+      throw conflict(
+        "The repository is being created or connected right now. Try again in a minute.",
+        "repository_busy",
+      );
+    }
+    try {
+      return await work();
+    } finally {
+      await client.query("select pg_advisory_unlock($1)", [REPOSITORY_LOCK]).catch((error: unknown) => {
+        // Closing the connection releases the lock too.
+        broken = error instanceof Error ? error : new Error("unlock failed");
+      });
+    }
+  } finally {
+    client.release(broken);
+  }
+}
+
 /** Creates a new repository at the target, with a new password unless one is stored. */
-export function initializeTarget(db: DbOrTx, actor: UserPrincipal): Promise<void> {
+export function initializeTarget(db: DbOrTx, actor: Actor): Promise<void> {
   return oneAtATime(() => initializeTargetNow(db, actor));
 }
 
-async function initializeTargetNow(db: DbOrTx, actor: UserPrincipal): Promise<void> {
+async function initializeTargetNow(db: DbOrTx, actor: Actor): Promise<void> {
   await testTarget(db);
   const target = (await readTarget(db))!;
   if (target.repository.state === "ready")
@@ -271,11 +321,11 @@ async function initializeTargetNow(db: DbOrTx, actor: UserPrincipal): Promise<vo
 }
 
 /** Uses an existing repository (e.g. after reinstalling the app) with its password. */
-export function connectTarget(db: DbOrTx, password: string, actor: UserPrincipal): Promise<void> {
+export function connectTarget(db: DbOrTx, password: string, actor: Actor): Promise<void> {
   return oneAtATime(() => connectTargetNow(db, password, actor));
 }
 
-async function connectTargetNow(db: DbOrTx, password: string, actor: UserPrincipal): Promise<void> {
+async function connectTargetNow(db: DbOrTx, password: string, actor: Actor): Promise<void> {
   const target = await readTarget(db);
   if (!target) throw conflict("Save the target first", "no_target");
   const probe = await probeRepository({
@@ -304,7 +354,7 @@ async function connectTargetNow(db: DbOrTx, password: string, actor: UserPrincip
   });
 }
 
-export async function confirmRecoveryKit(db: DbOrTx, actor: UserPrincipal) {
+export async function confirmRecoveryKit(db: DbOrTx, actor: Actor) {
   await db.transaction(async (tx) => {
     const target = await readSettingForUpdate<StoredTarget>(tx, TARGET_KEY);
     if (!target?.password) throw conflict("Create or connect the repository first", "no_repository");
@@ -315,6 +365,19 @@ export async function confirmRecoveryKit(db: DbOrTx, actor: UserPrincipal) {
     entityType: "target",
     summary: "Confirmed that the recovery kit is stored",
   });
+}
+
+/** The recovery kit as a download (page or command line); every download is in the audit log. */
+export async function downloadRecoveryKit(db: DbOrTx, actor: Actor, now = new Date()): Promise<string> {
+  const target = await readTarget(db);
+  if (!target?.password) throw conflict("Create or connect the repository first", "no_repository");
+  const text = recoveryKitText(target, await listSourceRows(db), now);
+  await audit(db, actor, {
+    action: "recovery_kit.download",
+    entityType: "target",
+    summary: "Downloaded the recovery kit",
+  });
+  return text;
 }
 
 /**

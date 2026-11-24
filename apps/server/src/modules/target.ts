@@ -2,18 +2,13 @@ import { Hono } from "hono";
 import { maintenanceInputSchema, targetConnectSchema, targetInputSchema } from "@backups/shared/api/target";
 import { getDb } from "../db/client";
 import type { AppEnv } from "../http/env";
-import { conflict } from "../http/errors";
 import { jsonBody, requireAdmin } from "../http/middleware";
-import { audit } from "../core/audit";
-import { writeSetting } from "../core/settings";
-import { listSourceRows } from "../sources/service";
 import {
-  MAINTENANCE_KEY,
   confirmRecoveryKit,
   connectTarget,
+  downloadRecoveryKit,
   initializeTarget,
-  readTarget,
-  recoveryKitText,
+  saveMaintenance,
   saveTarget,
   targetView,
   testTarget,
@@ -59,16 +54,8 @@ router.post("/target/connect", async (c) => {
 /** The recovery kit as a text file. Every download is in the audit log. */
 router.get("/target/recovery-kit", async (c) => {
   const actor = requireAdmin(c);
-  const db = getDb();
-  const target = await readTarget(db);
-  if (!target?.password) throw conflict("Create or connect the repository first", "no_repository");
   const now = new Date();
-  const text = recoveryKitText(target, await listSourceRows(db), now);
-  await audit(db, actor, {
-    action: "recovery_kit.download",
-    entityType: "target",
-    summary: "Downloaded the recovery kit",
-  });
+  const text = await downloadRecoveryKit(getDb(), actor, now);
   c.header("content-type", "text/plain; charset=utf-8");
   c.header(
     "content-disposition",
@@ -87,14 +74,9 @@ router.post("/target/recovery-kit/confirm", async (c) => {
 
 router.put("/target/maintenance", async (c) => {
   const actor = requireAdmin(c);
-  const { maintenanceTime } = await jsonBody(c, maintenanceInputSchema);
+  const input = await jsonBody(c, maintenanceInputSchema);
   const db = getDb();
-  await writeSetting(db, MAINTENANCE_KEY, { time: maintenanceTime });
-  await audit(db, actor, {
-    action: "maintenance.update",
-    entityType: "target",
-    summary: `Set the daily upkeep to ${maintenanceTime}`,
-  });
+  await saveMaintenance(db, input, actor);
   return c.json(await targetView(db));
 });
 

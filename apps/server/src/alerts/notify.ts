@@ -5,6 +5,7 @@ import {
   DEFAULT_NOTIFICATIONS,
   type Notifications,
   type NotificationsInput,
+  type TestResult,
 } from "@backups/shared/api/notifications";
 import type { notificationsInputSchema } from "@backups/shared/api/notifications";
 import type { z } from "zod";
@@ -15,7 +16,7 @@ import { logger } from "../logger";
 import { decryptSecret, encryptSecret, secretHint } from "../core/crypto";
 import { readSetting, writeSetting } from "../core/settings";
 import { audit } from "../core/audit";
-import type { UserPrincipal } from "../auth/principal";
+import { isOperator, type Actor } from "../auth/principal";
 import { latestRun } from "../runs/service";
 import { listSourceRows, sourceViews } from "../sources/service";
 import { PROBLEM_STATUSES } from "../sources/schedule";
@@ -66,7 +67,7 @@ export async function notificationsView(db: DbOrTx): Promise<Notifications> {
 export async function saveNotifications(
   db: DbOrTx,
   input: z.output<typeof notificationsInputSchema>,
-  actor: UserPrincipal,
+  actor: Actor,
 ) {
   const current = await stored(db);
   const { password, ...email } = input.email;
@@ -129,6 +130,24 @@ export async function sendMail(
     transport.close();
   }
   return true;
+}
+
+/** The test button: a mail to the recipients with the saved settings, even while email is off. */
+export async function sendTestEmail(db: DbOrTx, actor: Actor): Promise<TestResult> {
+  const who = isOperator(actor) ? `The operator command (${actor.command})` : actor.email;
+  try {
+    await sendMail(
+      db,
+      {
+        subject: "Test email",
+        text: `${who} sent this test from the notification settings. Alerts about failed and overdue backups arrive the same way.`,
+      },
+      { evenWhenOff: true },
+    );
+    return { ok: true, message: "Sent. Check the recipients' inboxes." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Not sent" };
+  }
 }
 
 /** Calls the heartbeat URL. */
@@ -240,7 +259,7 @@ async function notify(db: Db, sourceId: string, state: "failed" | "overdue" | nu
     .where(eq(sources.id, sourceId));
 }
 
-export async function testHeartbeat(db: DbOrTx) {
+export async function testHeartbeat(db: DbOrTx): Promise<TestResult> {
   const settings = await stored(db);
   if (!settings.heartbeatUrl) return { ok: false, message: "Set a heartbeat URL first" };
   const result = await callHeartbeat(settings.heartbeatUrl);

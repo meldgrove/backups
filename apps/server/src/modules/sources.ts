@@ -1,7 +1,5 @@
-import { rm } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
 import {
   SNAPSHOT_ID,
   sourceDeleteQuerySchema,
@@ -9,23 +7,19 @@ import {
   type SnapshotList,
   type SourceCreated,
   type SourceList,
-  type SourceTest,
 } from "@backups/shared/api/sources";
 import { getDb } from "../db/client";
-import { runs, sources } from "../db/schema";
 import type { AppEnv } from "../http/env";
-import { conflict, notFound } from "../http/errors";
+import { notFound } from "../http/errors";
 import { idParam, jsonBody, queryOf, requireAdmin } from "../http/middleware";
 import { audit } from "../core/audit";
 import { logger } from "../logger";
-import { activeRunOf, createRun, lockClaims, runView } from "../runs/service";
-import { dumpSnapshot, listSnapshots, repositoryUrl, sourceTag, type SnapshotInfo } from "../restic/restic";
-import { openRepository, readTarget } from "../target/target";
-import { queueForget } from "../worker/maintenance";
+import { runView } from "../runs/service";
+import { dumpSnapshot, listSnapshots, sourceTag, type SnapshotInfo } from "../restic/restic";
+import { openRepository } from "../target/target";
 import { STREAM_FILENAME } from "../sources/agent";
-import { stagingDir, testDrive } from "../sources/google-drive";
-import { testPersonio } from "../sources/personio";
-import { testS3Bucket } from "../sources/s3-bucket";
+import { stagingDir } from "../sources/google-drive";
+import { deleteSource, startBackup, testSource } from "../sources/manage";
 import {
   createSource,
   getSourceRow,
@@ -72,79 +66,19 @@ router.delete("/sources/:id", async (c) => {
   const actor = requireAdmin(c);
   const id = idParam(c);
   const { snapshots } = queryOf(c, sourceDeleteQuerySchema);
-  const db = getDb();
-  const row = await getSourceRow(db, id);
-  // Under the claims' lock: no run of the source starts while it is deleted, and
-  // with the source its queued runs go (cascade).
-  await db.transaction(async (tx) => {
-    await lockClaims(tx);
-    const [running] = await tx
-      .select({ id: runs.id })
-      .from(runs)
-      .where(and(eq(runs.sourceId, id), eq(runs.status, "running")))
-      .limit(1);
-    if (running) throw conflict("A backup of this source is running. Cancel it first.", "run_active");
-    await tx.delete(sources).where(eq(sources.id, id));
-    // The next upkeep forgets the snapshots (it may wait for the repository).
-    if (snapshots === "forget") {
-      const target = await readTarget(tx);
-      if (target) await queueForget(tx, sourceTag(id), repositoryUrl(target));
-    }
-  });
-  await rm(stagingDir(id), { recursive: true, force: true }).catch(() => undefined);
-  await audit(db, actor, {
-    action: "source.delete",
-    entityType: "source",
-    entityId: id,
-    summary:
-      snapshots === "forget"
-        ? `Deleted the source ${row.name}; the next upkeep forgets its snapshots`
-        : `Deleted the source ${row.name}; its snapshots stay in the repository`,
-  });
+  await deleteSource(getDb(), id, snapshots, actor);
   return c.body(null, 204);
 });
 
 router.post("/sources/:id/run", async (c) => {
   const actor = requireAdmin(c);
-  const id = idParam(c);
-  const db = getDb();
-  const row = await getSourceRow(db, id);
-  const active = await activeRunOf(db, id);
-  if (active) return c.json(runView(active, row.name, row.kind), 202);
-  await openRepository(db);
-  const run = await createRun(db, { kind: "backup", sourceId: id, trigger: "manual" });
-  await audit(db, actor, {
-    action: "source.run",
-    entityType: "source",
-    entityId: id,
-    summary: `Started a backup of ${row.name}`,
-  });
+  const { row, run } = await startBackup(getDb(), idParam(c), actor);
   return c.json(runView(run, row.name, row.kind), 202);
 });
 
 router.post("/sources/:id/test", async (c) => {
   requireAdmin(c);
-  const row = await getSourceRow(getDb(), idParam(c));
-  let result: SourceTest;
-  if (row.kind === "google_drive") result = await testDrive(row);
-  else if (row.kind === "personio") result = await testPersonio(row);
-  else if (row.kind === "s3_bucket") result = await testS3Bucket(row);
-  else {
-    const seen = row.agentLastSeenAt;
-    const fresh = seen && Date.now() - seen.getTime() < 10 * 60_000;
-    result = {
-      ok: Boolean(fresh),
-      message: !seen
-        ? "The agent has not asked yet. Add the backup-agent service to the app's compose file with BACKUP_URL and BACKUP_TOKEN."
-        : fresh
-          ? `The agent asked ${Math.round((Date.now() - seen.getTime()) / 1000)} seconds ago.`
-          : `The agent last asked at ${seen.toISOString()}. Is its service running?`,
-      items: row.agentInfo ? row.agentInfo.volumes.length : null,
-      bytes: null,
-      freeBytes: null,
-    };
-  }
-  return c.json(result);
+  return c.json(await testSource(getDb(), idParam(c)));
 });
 
 router.post("/sources/:id/token", async (c) => {

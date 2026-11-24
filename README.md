@@ -32,13 +32,17 @@ as Hetzner Object Storage.
 - **Admins only:** sign-in with any OpenID Connect provider, for the
   addresses in `ADMIN_EMAILS` or the groups in `ADMIN_GROUPS`. An audit log
   records every change and download.
+- **Settings from the command line:** `cli settings` sets the target, the
+  sources and the alerts on the server, without a browser, with the same
+  checks as the pages.
 
 Hono server, React web app, PostgreSQL, restic, rclone, one Docker image.
 
 ## Documentation
 
 - [Deployment](docs/deployment.md): the server, the bucket (Hetzner Object
-  Storage with Object Lock and lifecycle rules), upgrades, automatic updates.
+  Storage with Object Lock and lifecycle rules), settings from the command
+  line, upgrades, automatic updates.
 - [Coolify](docs/coolify.md): running it on Coolify instead.
 - [Sources](docs/sources.md): connecting Meldgrove apps, Google Drive,
   Personio and S3 buckets.

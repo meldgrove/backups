@@ -1,21 +1,27 @@
 import { lt, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db/client";
 import { auditLog } from "../db/schema";
-import type { UserPrincipal } from "../auth/principal";
+import { isOperator, type Actor } from "../auth/principal";
 
-/** Records who changed or downloaded what. `summary` is shown to admins; never put secrets in it. */
+/**
+ * Records who changed or downloaded what: an admin in the web app, or the
+ * operator command, which shows as the actor `operator` with its command
+ * after the summary. `summary` is shown to admins; never put secrets in it.
+ */
 export async function audit(
   db: DbOrTx,
-  actor: UserPrincipal | null,
+  actor: Actor | null,
   entry: { action: string; entityType: string; entityId?: string | null; summary: string },
 ) {
+  const operator = isOperator(actor) ? actor : null;
+  const user = actor && !isOperator(actor) ? actor : null;
   await db.insert(auditLog).values({
-    actorId: actor?.id ?? null,
-    actorEmail: actor?.email ?? null,
+    actorId: user?.id ?? null,
+    actorEmail: user?.email ?? (operator ? "operator" : null),
     action: entry.action,
     entityType: entry.entityType,
     entityId: entry.entityId ?? null,
-    summary: entry.summary.slice(0, 500),
+    summary: (operator ? `${entry.summary} (${operator.command})` : entry.summary).slice(0, 500),
   });
 }
 

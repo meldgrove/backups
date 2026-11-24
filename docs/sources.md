@@ -5,7 +5,8 @@ What Meldgrove Backups backs up, and how to connect it. Add a source under
 hours, daily or weekly, in the server's time zone `TZ`) and its own
 retention (the newest snapshot of each of the last N days, weeks, months and
 years; the newest snapshot always stays). **Test** checks the connection,
-**Back up now** starts a backup at once.
+**Back up now** starts a backup at once. On the server, `cli settings` adds
+and changes sources without a browser ([below](#from-the-command-line)).
 
 ## Meldgrove apps
 
@@ -170,6 +171,89 @@ empty: **Test** then says that it found no objects.
 Like Google Drive, the copy needs as much disk space as the bucket holds,
 and it is not encrypted on Backups' server; the snapshots in the target
 are.
+
+## From the command line
+
+`cli settings apply sources` adds a source with the body the **Add source**
+page sends; with `--id <id>` it changes that source
+([Deployment](deployment.md#settings-from-the-command-line)). Every kind has
+a `name`, a `schedule` and a `retention`:
+
+- `schedule`: `{"type": "daily", "time": "02:00"}`,
+  `{"type": "weekly", "day": 0, "time": "03:00"}` (0 is Sunday), or
+  `{"type": "hourly", "every": 6, "minute": 0}` (every 1, 2, 3, 4, 6, 8 or
+  12 hours). Server time, `TZ`.
+- `retention`: `{"daily": 14, "weekly": 8, "monthly": 12, "yearly": 0}`.
+- `"enabled": false` pauses the source.
+
+A **Meldgrove app**. stdout holds only `BACKUP_URL` and `BACKUP_TOKEN` for
+the app's `.env`; `cli tokens create agent --source <id>` issues a new
+token later.
+
+```json
+{
+  "kind": "app",
+  "name": "Handbook",
+  "schedule": { "type": "daily", "time": "02:00" },
+  "retention": { "daily": 14, "weekly": 8, "monthly": 12, "yearly": 0 }
+}
+```
+
+**Google Drive**: a shared drive (`"scope": {"type": "folders", "folders":
+[{"id": "<folder id>", "label": "Finance"}]}` for folders), and the service
+account's JSON key as a string. With `jq`:
+`jq -n --rawfile key service-account.json '{…, secrets: {serviceAccountKey: $key}}'`.
+
+```json
+{
+  "kind": "google_drive",
+  "name": "Shared drive",
+  "schedule": { "type": "daily", "time": "01:00" },
+  "retention": { "daily": 14, "weekly": 8, "monthly": 12, "yearly": 0 },
+  "config": {
+    "subject": "backup@example.org",
+    "scope": { "type": "shared_drive", "driveId": "<shared drive id>" }
+  },
+  "secrets": { "serviceAccountKey": "<the JSON key, as a string>" }
+}
+```
+
+**Personio** (`baseUrl` only when Personio names another one):
+
+```json
+{
+  "kind": "personio",
+  "name": "Personio",
+  "schedule": { "type": "daily", "time": "01:30" },
+  "retention": { "daily": 14, "weekly": 8, "monthly": 12, "yearly": 0 },
+  "config": { "clientId": "<client ID>", "documents": true },
+  "secrets": { "clientSecret": "<client secret>" }
+}
+```
+
+**S3 bucket** (`prefix`: a folder in the bucket, or `""` for all of it):
+
+```json
+{
+  "kind": "s3_bucket",
+  "name": "Library files",
+  "schedule": { "type": "daily", "time": "03:00" },
+  "retention": { "daily": 14, "weekly": 8, "monthly": 12, "yearly": 0 },
+  "config": {
+    "endpoint": "https://fsn1.your-objectstorage.com",
+    "region": "fsn1",
+    "bucket": "acme-library",
+    "prefix": "",
+    "accessKeyId": "<access key>"
+  },
+  "secrets": { "secretAccessKey": "<secret key>" }
+}
+```
+
+Then `cli settings test sources --id <id>` checks the source, and
+`cli sources run <id>` starts its first backup.
+`cli settings remove sources --id <id>` deletes it; its snapshots stay in
+the repository unless `--snapshots forget` is given.
 
 ## This app
 

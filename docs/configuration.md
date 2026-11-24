@@ -3,7 +3,8 @@
 Environment variables of Meldgrove Backups, set in `.env` next to
 `compose.yaml` (or in Coolify's environment variables). Blank values count
 as unset. Everything else (the target, sources, schedules, retention,
-alerts) is set up in the app.
+alerts) is set up in the app: on its pages, or on the server with
+`cli settings` ([Deployment](deployment.md#settings-from-the-command-line)).
 
 ## Required
 

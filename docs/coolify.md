@@ -32,8 +32,25 @@ variable is described in [Configuration](configuration.md).
    [Protect the update service](#protect-the-update-service)).
 6. **Deploy**, open `APP_URL`, sign in, and set up the target
    ([The bucket](deployment.md#the-bucket)), the alerts and the
-   [sources](sources.md).
+   [sources](sources.md), or set them in the terminal
+   ([below](#settings-from-the-command-line)).
 7. **Automatic updates:** set them up as [below](#automatic-updates).
+
+## Settings from the command line
+
+`cli settings` sets the target, the sources and the alerts without a
+browser, as on a server
+([Deployment](deployment.md#settings-from-the-command-line)). On Coolify,
+open the Terminal of the resource, choose the `web` container and run
+`cli settings list`.
+
+- `cli settings apply <name>` in the terminal turns the echo off and asks
+  for the body: paste it, press Enter, then Ctrl-D. Nothing pasted is shown.
+  A terminal line holds at most 4,095 bytes: paste a long body (such as a
+  Google service account key) over several lines.
+- `cli target recovery-kit` writes the kit only into a file, never onto the
+  terminal. A file in the container is no place for it: download the kit on
+  the **Target** page instead.
 
 ## Upgrades
 

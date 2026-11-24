@@ -32,6 +32,9 @@ npm run dev
 To try an app source, run the [backup agent](https://github.com/meldgrove/backup-agent)
 with `BACKUP_URL=http://localhost:3000` and the token the app shows.
 
+`npm run cli -- settings list` runs the operator command against the
+development database (`cli help` lists the commands).
+
 ## Checks
 
 ```sh
