@@ -17,7 +17,6 @@
   "dependencies": {
     "@backups/shared": "*",
     "@hono/node-server": "2.1.8",
-    "@meldgrove/ui": "^0.1.9",
     "@sentry/node": "11.12.0",
     "aws4fetch": "1.0.20",
     "better-auth": "1.7.23",
