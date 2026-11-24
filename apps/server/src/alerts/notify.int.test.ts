@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as createTcpServer, type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
@@ -106,6 +106,41 @@ describe("alerts", () => {
     expect((await mails()).map((mail) => mail.Subject)).toContain(
       "[Backups] Backup back to normal: Helpdesk",
     );
+  });
+
+  it("shows the mail server's answer to a failed test, without the login", async () => {
+    const admin = await createUser();
+    const login = { username: "backups@example.org", password: "wrong-smtp-pass" };
+    const server = createTcpServer((socket) => {
+      socket.on("error", () => undefined);
+      socket.write("220 mail.example.org ESMTP\r\n");
+      socket.on("data", (data) =>
+        socket.write(
+          String(data).startsWith("EHLO")
+            ? "250-mail.example.org\r\n250 AUTH PLAIN\r\n"
+            : `535 5.7.8 ${login.username}: ${login.password} is not the password\r\n`,
+        ),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await request("PUT", "/api/v1/notifications", {
+        userId: admin.id,
+        body: {
+          email: { ...email, host: "127.0.0.1", port, ...login },
+          heartbeatUrl: "",
+          notifyRecovery: true,
+        },
+      });
+      const test = await request("POST", "/api/v1/notifications/test-email", { userId: admin.id, body: {} });
+      expect(test.body).toEqual({
+        ok: false,
+        message: "The mail server refused: 535 5.7.8 ***: *** is not the password",
+      });
+    } finally {
+      server.close();
+    }
   });
 
   it("calls the heartbeat only while all is well", async () => {
