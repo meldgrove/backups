@@ -78,7 +78,8 @@ function report(error: unknown, io: CliIo): number {
     io.err("Someone else changed this at the same time. Try again.\n");
     return 1;
   }
-  if (code && /^[0-9A-Z]{5}$/.test(code)) {
+  // A SQLSTATE, not a Node.js code such as EPERM: no SQLSTATE starts with E.
+  if (code && /^(?!E)[0-9A-Z]{5}$/.test(code)) {
     io.err(`Something went wrong. Try again. (database error ${code})\n`);
     return 1;
   }

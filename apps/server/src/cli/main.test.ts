@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm";
 import pg from "pg";
+import { logger } from "../logger";
 import { target } from "./target";
 import { runCli } from "./main";
 
@@ -46,5 +47,15 @@ describe("a database error", () => {
       stdout: "",
       stderr: "Someone else changed this at the same time. Try again.\n",
     });
+  });
+});
+
+describe("another error", () => {
+  it("is logged, not taken for a database error because its code has five characters", async () => {
+    const logged = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const error = Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+    vi.spyOn(target, "rows").mockRejectedValue(error);
+    expect(await list()).toEqual({ code: 1, stdout: "", stderr: "Something went wrong. Try again.\n" });
+    expect(logged).toHaveBeenCalledWith({ err: error }, "command failed");
   });
 });
