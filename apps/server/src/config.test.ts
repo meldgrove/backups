@@ -56,4 +56,12 @@ describe("config", () => {
     expect(configWith({ UPDATER_URL: "" })().UPDATER_URL).toBe("");
     expect(configWith({ UPDATER_URL: "http://localhost:8080/" })().UPDATER_URL).toBe("http://localhost:8080");
   });
+
+  it("sends no updater token when UPDATER_TOKEN is empty, and refuses one with spaces", () => {
+    delete process.env.UPDATER_TOKEN;
+    expect(configWith({})().UPDATER_TOKEN).toBeUndefined();
+    expect(configWith({ UPDATER_TOKEN: "" })().UPDATER_TOKEN).toBeUndefined();
+    expect(configWith({ UPDATER_TOKEN: "0123abcd" })().UPDATER_TOKEN).toBe("0123abcd");
+    expect(configWith({ UPDATER_TOKEN: "two words" })).toThrow(/UPDATER_TOKEN: Only visible ASCII/);
+  });
 });

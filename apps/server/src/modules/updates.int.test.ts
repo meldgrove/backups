@@ -1,30 +1,43 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { startFakeUpdater, updaterStatus, type FakeUpdater } from "@meldgrove/ui/updates/testing";
 import { resetConfigForTests } from "../config";
-import { startFakeUpdater, updaterStatus } from "../test/fake-updater";
 import { createUser, request, resetDatabase } from "../test/helpers";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
 
-let updater: Awaited<ReturnType<typeof startFakeUpdater>>;
+const TOKEN = "0123456789abcdef0123456789abcdef";
+let updater: FakeUpdater;
 
+function useUpdater(settings: { UPDATER_URL: string; UPDATER_TOKEN?: string }) {
+  process.env.UPDATER_URL = settings.UPDATER_URL;
+  if (settings.UPDATER_TOKEN === undefined) delete process.env.UPDATER_TOKEN;
+  else process.env.UPDATER_TOKEN = settings.UPDATER_TOKEN;
+  resetConfigForTests();
+}
+
+/**
+ * The routes of the app around the shared handler (@meldgrove/ui, which has
+ * the tests of the updater's answers): who may call them, the token and the
+ * body reach the updater.
+ */
 describe("updates API", () => {
   beforeAll(async () => {
-    updater = await startFakeUpdater();
-    process.env.UPDATER_URL = updater.url;
-    resetConfigForTests();
+    updater = await startFakeUpdater({ token: TOKEN });
   });
   afterAll(async () => {
     await updater.close();
     delete process.env.UPDATER_URL;
+    delete process.env.UPDATER_TOKEN;
     resetConfigForTests();
   });
   beforeEach(async () => {
     await resetDatabase();
+    useUpdater({ UPDATER_URL: updater.url, UPDATER_TOKEN: TOKEN });
     updater.calls.length = 0;
     updater.respond(() => ({ body: updaterStatus() }));
   });
 
-  it("is only for admins in the web app", async () => {
+  it("is only for admins in the web app, and sends them the status with the token", async () => {
     const admin = await createUser({ isAdmin: true });
     const person = await createUser({ isAdmin: false });
 
@@ -42,12 +55,36 @@ describe("updates API", () => {
 
     const status = await request("GET", "/api/v1/admin/updates", { userId: admin.id });
     expect(status.status).toBe(200);
+    expect(status.headers.get("cache-control")).toBe("no-store");
     expect(status.body).toEqual({
       app: { version: null },
       reachable: true,
       updater: updaterStatus(),
       error: null,
     });
+    expect(updater.calls).toEqual([
+      { method: "GET", path: "/v1/status", body: null, authorization: `Bearer ${TOKEN}` },
+    ]);
+  });
+
+  it("sends an installation with its version, and checks the version first", async () => {
+    const admin = await createUser({ isAdmin: true });
+    updater.respond(() => ({ status: 202, body: updaterStatus() }));
+
+    const install = await request("POST", "/api/v1/admin/updates/install", {
+      userId: admin.id,
+      body: { version: "0.2.1" },
+    });
+    expect(install.status).toBe(202);
+    const wrong = await request("POST", "/api/v1/admin/updates/install", {
+      userId: admin.id,
+      body: { version: "latest" },
+    });
+    expect(wrong.status).toBe(400);
+
+    expect(updater.calls).toEqual([
+      { method: "POST", path: "/v1/install", body: { version: "0.2.1" }, authorization: `Bearer ${TOKEN}` },
+    ]);
   });
 
   it("protects changes against other sites", async () => {
@@ -61,96 +98,13 @@ describe("updates API", () => {
     expect(updater.calls).toEqual([]);
   });
 
-  it("checks versions and channels before it asks the updater", async () => {
+  it("sends no token without UPDATER_TOKEN, and names it when the updater wants one", async () => {
     const admin = await createUser({ isAdmin: true });
-    for (const version of [
-      "latest",
-      "0.2",
-      "v0.2.1",
-      "0.2.1-rc.1",
-      "0.2.1\nversion=9.9.9",
-      "sha256:abc",
-      21,
-    ]) {
-      const response = await request("POST", "/api/v1/admin/updates/install", {
-        userId: admin.id,
-        body: { version },
-      });
-      expect(response.status).toBe(422);
-    }
-    const channel = await request("POST", "/api/v1/admin/updates/channel", {
-      userId: admin.id,
-      body: { channel: "nightly" },
-    });
-    expect(channel.status).toBe(422);
-    expect(updater.calls).toEqual([]);
+    useUpdater({ UPDATER_URL: updater.url, UPDATER_TOKEN: "" });
 
-    for (const version of ["0.2.1", "0.2.1-preview.3", "sha256:0123456789ab"]) {
-      updater.respond(() => ({ status: 202, body: updaterStatus() }));
-      const response = await request("POST", "/api/v1/admin/updates/install", {
-        userId: admin.id,
-        body: { version },
-      });
-      expect(response.status).toBe(202);
-    }
-    expect(updater.calls.map((call) => call.body)).toEqual([
-      { version: "0.2.1" },
-      { version: "0.2.1-preview.3" },
-      { version: "sha256:0123456789ab" },
-    ]);
-  });
-
-  it("answers the updater's refusal with 409 and the latest status", async () => {
-    const admin = await createUser({ isAdmin: true });
-    updater.respond((call) =>
-      call.path === "/v1/channel"
-        ? { status: 409, body: { error: "The platform's image tag latest decides. Change it there." } }
-        : { body: updaterStatus({ mode: "platform" }) },
-    );
-    const response = await request("POST", "/api/v1/admin/updates/channel", {
-      userId: admin.id,
-      body: { channel: "preview" },
-    });
+    const response = await request("POST", "/api/v1/admin/updates/check", { userId: admin.id, body: {} });
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({
-      app: { version: null },
-      reachable: true,
-      updater: updaterStatus({ mode: "platform" }),
-      error: "The platform's image tag latest decides. Change it there.",
-    });
-  });
-
-  it("passes an error of the updater (5xx) through, never as a 409", async () => {
-    const admin = await createUser({ isAdmin: true });
-    updater.respond((call) =>
-      call.path === "/v1/install"
-        ? { status: 503, body: { error: "The updater is busy. Try again in a minute." } }
-        : { body: updaterStatus() },
-    );
-    const response = await request("POST", "/api/v1/admin/updates/install", {
-      userId: admin.id,
-      body: { version: "0.2.1" },
-    });
-    expect(response.status).toBe(503);
-    expect(response.body).toEqual({
-      app: { version: null },
-      reachable: true,
-      updater: updaterStatus(),
-      error: "The updater is busy. Try again in a minute.",
-    });
-  });
-
-  it("reports an updater that is not there", async () => {
-    const admin = await createUser({ isAdmin: true });
-    process.env.UPDATER_URL = "http://127.0.0.1:9";
-    resetConfigForTests();
-    try {
-      const response = await request("POST", "/api/v1/admin/updates/check", { userId: admin.id, body: {} });
-      expect(response.status).toBe(200);
-      expect(response.body).toMatchObject({ reachable: false, updater: null, error: expect.any(String) });
-    } finally {
-      process.env.UPDATER_URL = updater.url;
-      resetConfigForTests();
-    }
+    expect(response.body).toMatchObject({ reachable: true, error: expect.stringContaining("UPDATER_TOKEN") });
+    expect(updater.calls.map((call) => call.authorization)).toEqual([null, null]);
   });
 });

@@ -164,8 +164,10 @@ run the commands as root (`sudo -i`).
    `chmod 600 .env`) and set production values: `BACKUPS_VERSION` (a series
    such as `0.1`), `APP_URL`, `DATABASE_URL`, a new `AUTH_SECRET` and a new
    `ENCRYPTION_KEY` (each `openssl rand -base64 32`), the `OIDC_*` values,
-   the admins in `ADMIN_EMAILS` or `ADMIN_GROUPS`, and `TZ` (the schedules'
-   time zone, e.g. `Europe/Berlin`). Remove `NODE_ENV=development`,
+   the admins in `ADMIN_EMAILS` or `ADMIN_GROUPS`, `TZ` (the schedules'
+   time zone, e.g. `Europe/Berlin`), and `UPDATER_TOKEN`
+   (`openssl rand -hex 32`; recommended, see
+   [Protect the update service](#protect-the-update-service)). Remove `NODE_ENV=development`,
    `RUN_MIGRATIONS` and `DATA_DIR`. With an `https` `APP_URL`, the app does
    not start with the example secrets. Without a database of your own, add
    `COMPOSE_FILE=compose.yaml:compose.postgres.yaml`, a `POSTGRES_PASSWORD`
@@ -280,6 +282,27 @@ updater's requests: for each installation, it writes the exact version into
 --wait`, and goes back to the version before when the app does not become
 healthy. `journalctl -u meldgrove-updater-backups.service` shows each
 installation; `sh updater-setup.sh remove` switches it off.
+
+### Protect the update service
+
+The updater's API installs versions and switches the channel. With
+`UPDATER_TOKEN` set in `.env`, `compose.yaml` gives the same token to the
+app and to the updater, and the updater takes only requests that carry it.
+Without it, everything works as before, but anything on the app's Compose
+network can call the API. The token is recommended, not required. From
+updater 0.2.4, admins see a warning under **Settings → Updates** while it
+is missing.
+
+For an installation that runs without it, as root in `/srv/backups`:
+
+1. Install the newest release first (**Settings → Updates** shows the
+   installed version). The restart below keeps the version in
+   `BACKUPS_VERSION`, and an older version does not send the token: its
+   update button would stop working.
+2. Add a line `UPDATER_TOKEN=<token>` to `.env`, with a new token from
+   `openssl rand -hex 32`.
+3. Get the newest release's `compose.yaml`: `git pull`.
+4. Restart with it: `docker compose up -d --pull always`.
 
 ## Error reports and performance data (Sentry)
 
