@@ -44,6 +44,10 @@ services:
     <<: *app
     command: ["migrate"]
     restart: "no"
+    # `docker compose run --rm -T migrate cli …` (the operator command) works
+    # on the same local copies and restic cache as web and worker.
+    volumes:
+      - data:/data
 
   web:
     <<: *app

@@ -7,7 +7,8 @@ import { resolvePrincipal } from "../auth/resolve";
 import type { UserPrincipal } from "../auth/principal";
 import { logger } from "../logger";
 import type { AppEnv } from "./env";
-import { AppError, badRequest, parseWith, unauthorized } from "./errors";
+import { AppError, parseWith, unauthorized } from "./errors";
+import { parseJsonBody } from "./json";
 
 export const requestId: MiddlewareHandler<AppEnv> = async (c, next) => {
   const incoming = c.req.header("x-request-id");
@@ -68,13 +69,7 @@ export async function jsonBody<T extends z.ZodType, E extends Env>(
   c: Context<E>,
   schema: T,
 ): Promise<z.infer<T>> {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    throw badRequest("The request body must be JSON");
-  }
-  return parseWith(schema, body);
+  return parseJsonBody(await c.req.text(), schema);
 }
 
 export function queryOf<T extends z.ZodType, E extends Env>(c: Context<E>, schema: T): z.infer<T> {

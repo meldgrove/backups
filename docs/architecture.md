@@ -99,8 +99,10 @@ connection** opens the repository (`restic cat config`: ready, missing, or
 wrong password) and reads the bucket's versioning, Object Lock and lifecycle
 rules with three signed S3 requests (`target/bucket.ts`). **Create
 repository** runs `restic init` with a new random password; **Connect**
-takes the password of an existing one. The recovery kit is generated from
-the stored values on each download.
+takes the password of an existing one. Both run one at a time, also across
+processes (the web app and the operator command), under a PostgreSQL
+advisory lock. The recovery kit is generated from the stored values on each
+download.
 
 ## Alerts
 
@@ -115,3 +117,18 @@ Only admins sign in (Better Auth, generic OpenID Connect; `auth/sign-in.ts`
 checks `ADMIN_EMAILS` and `ADMIN_GROUPS` at every sign-in and keeps none of
 the provider's tokens). Every `/api/v1` route requires an admin; changes need
 the app's own `Origin`. Changes and downloads are in the audit log.
+
+## The operator command
+
+`cli` in the image runs `dist/cli.mjs` (`src/cli.ts`): `cli settings`
+lists, shows, applies, removes and tests the settings of the admin pages
+(`target`, `maintenance`, `sources`, `notifications`), and `cli target`,
+`cli sources run` and `cli tokens create agent` press the pages' buttons.
+Each setting name is a module in `src/cli/` that calls the same service
+functions as the routes, with the same shared schemas and `parseJsonBody`
+(`http/json.ts`). The actor is an `operator` (`auth/principal.ts`), which
+only `src/cli` creates and no request can carry; the audit log shows it as
+`operator`, with the command after the summary. The command reads bodies
+from stdin, logs to stderr, starts no server or worker, and exits; web and
+worker read these settings from the database on each use, so nothing has
+to be told.

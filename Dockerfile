@@ -3,6 +3,7 @@
 #   web      web app and the agents' uploads (port 3000)
 #   worker   schedules, Google Drive, S3 bucket and Personio backups, upkeep, alerts
 #   migrate  apply database migrations, then exit
+#   cli …    the operator command, e.g. `cli settings list` (docs/deployment.md)
 # The image has restic (backups), rclone (Google Drive, S3 buckets) and pg_dump 18 (this
 # app's own database).
 
@@ -92,6 +93,10 @@ COPY --from=build --chown=node:node /app/apps/server/dist ./apps/server/dist
 COPY --from=build --chown=node:node /app/apps/server/drizzle ./apps/server/drizzle
 COPY --from=build --chown=node:node /app/apps/web/dist ./apps/web/dist
 COPY --chown=node:node docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# `cli …` in a terminal of a running container, e.g. on Coolify or with
+# `docker compose exec web cli settings list`.
+RUN printf '#!/bin/sh\nexec docker-entrypoint.sh cli "$@"\n' > /usr/local/bin/cli \
+    && chmod 755 /usr/local/bin/cli
 # The release workflow sets the version; images built from source have none.
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}

@@ -2,8 +2,8 @@
 
 For the person who runs Meldgrove Backups on a Linux server, such as a VPS
 with Debian or Ubuntu: requirements, [the bucket](#the-bucket),
-[setup](#setup), upgrades, automatic updates, and what the app backs up of
-itself. Every environment variable is described in
+[setup](#setup), [settings from the command line](#settings-from-the-command-line),
+upgrades, automatic updates, and what the app backs up of itself. Every environment variable is described in
 [Configuration](configuration.md). To run it on Coolify instead, see
 [Coolify](coolify.md). Connecting sources: [Sources](sources.md).
 
@@ -192,7 +192,8 @@ run the commands as root (`sudo -i`).
 
 7. Open `APP_URL`, sign in, and set up the target as
    [above](#the-bucket), then the alerts (**Settings → Notifications**) and
-   the [sources](sources.md).
+   the [sources](sources.md). On the server, `cli settings` sets the same
+   ([below](#settings-from-the-command-line)).
 8. **Automatic updates:** [set them up](#setup-on-the-server).
 
 ## Alerts
@@ -218,6 +219,131 @@ removes data no snapshot needs (`restic prune`), checks the repository's
 structure (on Sundays it also reads and verifies a random 5% of the
 data), measures its size, and reads the bucket's protection
 settings again. A failed upkeep sends an alert.
+
+## Settings from the command line
+
+What admins set under **Settings → Target**, **Settings → Notifications**
+and **Sources** can also be set on the server, without a browser, with
+`cli`. It runs the same code as the pages: the same checks, the same
+encryption, and an entry in the audit log with the actor `operator` and the
+command. In `/srv/backups`:
+
+```sh
+docker compose run --rm -T migrate cli settings list
+```
+
+In a running container, such as a terminal on Coolify, the command is just
+`cli …` (`docker compose exec web cli settings list`).
+
+| Command                                                | What it does                                                                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `cli settings list [--json]`                           | Each setting and each source (with its ID): `set`, `not set` or `incomplete`, with hints such as `secret key …a1b2` |
+| `cli settings show <name> [--id <id>]`                 | The setting as JSON, as the page reads it: secrets only as hints. `sources` without `--id`: every source            |
+| `cli settings apply <name> [--id <id>]`                | Saves the JSON body on stdin, as the page's **Save** does; prints what `show` prints                                |
+| `cli settings remove sources --id <id>`                | Deletes a source; its snapshots stay. `--snapshots forget`: the next upkeep forgets them                            |
+| `cli settings test <name> [--id <id>]`                 | What the page's test button does                                                                                    |
+| `cli settings test notifications --email\|--heartbeat` | Sends a test email to the recipients, or calls the heartbeat URL                                                    |
+| `cli target initialize`                                | **Create repository**: `restic init` with a new password                                                            |
+| `cli target connect`                                   | **Connect to an existing repository** with the password in the body `{"password": "…"}`                             |
+| `cli target recovery-kit`                              | **Download recovery kit**, into a new private file (below): never onto a terminal                                   |
+| `cli target confirm-recovery-kit`                      | **I stored the recovery kit**                                                                                       |
+| `cli sources run <id>`                                 | **Back up now**                                                                                                     |
+| `cli tokens create agent --source <id>`                | **New token** of an app source: prints only the token                                                               |
+| `cli help`                                             | The commands and the setting names                                                                                  |
+
+- The setting names: `target` (the bucket and its keys), `maintenance` (the
+  time of the daily upkeep), `sources` (a list: one entry per source) and
+  `notifications` (alert emails and the heartbeat URL).
+- Secrets go only in the body on stdin, never in an argument (arguments show
+  in `ps` and the shell history). Nothing prints a saved secret, except the
+  recovery kit and a new agent token, which exist to be handed over.
+- `apply` replaces the whole setting or source, as the page does: start from
+  what `show` prints. As on the page, an empty or missing secret keeps the
+  saved one.
+- `apply sources` without `--id` adds a source; its ID goes to stderr. For a
+  Meldgrove app, stdout holds only the two lines for the app's `.env`,
+  `BACKUP_URL` and `BACKUP_TOKEN`, shown this once: redirect them into a
+  new file that only its owner may read, as for the recovery kit and a new
+  token: `(umask 077; set -C; docker compose run --rm -T migrate cli … > agent.env)`
+  (`set -C` refuses to overwrite a regular file that is there already).
+- Exit codes: `0` done; `1` refused, with the page's message and the field
+  on stderr (also a failed test); `2` a wrong command or a body that is not
+  JSON.
+
+The bodies, as the pages send them:
+
+`target`: the bucket ([above](#the-bucket)). Then `cli settings test target`,
+`cli target initialize` (or `cli target connect` for an existing
+repository), the recovery kit into a new file that only its owner may read,
+`(umask 077; set -C; docker compose run --rm -T migrate cli target recovery-kit > recovery-kit.txt)`,
+store the kit offline and delete the file, and
+`cli target confirm-recovery-kit`.
+
+```json
+{
+  "endpoint": "https://hel1.your-objectstorage.com",
+  "region": "hel1",
+  "bucket": "acme-backups",
+  "prefix": "",
+  "accessKeyId": "<access key>",
+  "secretAccessKey": "<secret key>"
+}
+```
+
+`maintenance`: the time of the daily upkeep, in the time zone `TZ`.
+
+```json
+{ "maintenanceTime": "04:30" }
+```
+
+`notifications` (`security`: `tls` on port 465, `starttls` on 587, or
+`none`). The heartbeat URL's path authorizes the pings, so the command
+treats it as a secret: `show` prints only its origin as `heartbeatUrlHint`, a body without
+`heartbeatUrl` keeps the saved one, and `"heartbeatUrl": ""` turns the
+heartbeat off. Then `cli settings test notifications --email` and
+`--heartbeat`.
+
+```json
+{
+  "email": {
+    "enabled": true,
+    "host": "mail.example.org",
+    "port": 587,
+    "security": "starttls",
+    "username": "backups@example.org",
+    "password": "<password>",
+    "from": "backups@example.org",
+    "recipients": ["it@example.org"]
+  },
+  "heartbeatUrl": "https://hc-ping.com/<check>",
+  "notifyRecovery": true
+}
+```
+
+`sources`: a Meldgrove app. The bodies of the other kinds are in
+[Sources](sources.md#from-the-command-line).
+
+```json
+{
+  "kind": "app",
+  "name": "Handbook",
+  "schedule": { "type": "daily", "time": "02:00" },
+  "retention": { "daily": 14, "weekly": 8, "monthly": 12, "yearly": 0 }
+}
+```
+
+An AI with access to the server sets a key this way: it receives the secret
+as a file, pipes the body into `cli settings apply`, runs
+`cli settings test` and deletes the file. With `jq`, the secret never
+appears in an argument:
+
+```sh
+jq -n --rawfile key s3-secret '{endpoint: "https://hel1.your-objectstorage.com", region: "hel1",
+  bucket: "acme-backups", prefix: "", accessKeyId: "<access key>", secretAccessKey: ($key | rtrimstr("\n"))}' \
+  | docker compose run --rm -T migrate cli settings apply target
+docker compose run --rm -T migrate cli settings test target
+rm s3-secret
+```
 
 ## Health checks
 

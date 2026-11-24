@@ -15,7 +15,7 @@ import { runs, sources } from "../db/schema";
 import { decryptSecret, encryptSecret, randomSecret, secretHint, sha256Hex } from "../core/crypto";
 import { audit } from "../core/audit";
 import { notFound, validationError } from "../http/errors";
-import type { UserPrincipal } from "../auth/principal";
+import type { Actor } from "../auth/principal";
 import { runView } from "../runs/service";
 import { nextRunAfter, sourceStatus } from "./schedule";
 
@@ -227,7 +227,7 @@ function configOf(input: ParsedSourceInput): Record<string, unknown> {
   return {};
 }
 
-export async function createSource(db: DbOrTx, input: ParsedSourceInput, actor: UserPrincipal) {
+export async function createSource(db: DbOrTx, input: ParsedSourceInput, actor: Actor) {
   const token = input.kind === "app" ? newAgentToken() : null;
   const [row] = await db
     .insert(sources)
@@ -253,7 +253,7 @@ export async function createSource(db: DbOrTx, input: ParsedSourceInput, actor: 
   return { row: row!, token: token?.token ?? null };
 }
 
-export async function updateSource(db: DbOrTx, id: string, input: ParsedSourceInput, actor: UserPrincipal) {
+export async function updateSource(db: DbOrTx, id: string, input: ParsedSourceInput, actor: Actor) {
   const current = await getSourceRow(db, id);
   if (current.kind !== input.kind) throw validationError({ kind: "The kind of a source cannot change" });
   const scheduleChanged = JSON.stringify(current.schedule) !== JSON.stringify(input.schedule);
@@ -283,7 +283,7 @@ export async function updateSource(db: DbOrTx, id: string, input: ParsedSourceIn
   await audit(db, actor, { action: "source.update", entityType: "source", entityId: id, summary: what });
 }
 
-export async function rotateAgentToken(db: DbOrTx, id: string, actor: UserPrincipal): Promise<string> {
+export async function rotateAgentToken(db: DbOrTx, id: string, actor: Actor): Promise<string> {
   const current = await getSourceRow(db, id);
   if (current.kind !== "app") throw validationError({ kind: "Only app sources have an agent token" });
   const token = newAgentToken();

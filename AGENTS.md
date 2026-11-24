@@ -20,7 +20,9 @@ npm workspaces, Node.js 26, strict TypeScript.
 - `packages/shared` (`@backups/shared/*`): zod schemas of the API
   (`api/*.ts`), schedules and retention, error-report redaction.
 
-One Docker image runs every process: `APP_ROLE` = `all | web | worker | migrate`.
+One Docker image runs every process: `APP_ROLE` = `all | web | worker | migrate`;
+its command `cli …` runs the operator command (`cli settings`, `cli target`,
+`cli sources`, `cli tokens`).
 It contains restic, rclone and pg_dump 18.
 
 ## Layout
@@ -28,12 +30,14 @@ It contains restic, rclone and pg_dump 18.
 ```
 apps/server/src/
   main.ts          entry; APP_ROLE selects the processes
+  cli.ts           entry of the operator command; cli/ has one module per setting name
   config.ts        every environment variable (zod); read only via config()
   db/schema/       Drizzle schema (auth.ts, app.ts)
   auth/            Better Auth, the admin check at sign-in
   restic/          the restic program: backup, snapshots, dump, forget, prune, check
   target/          the bucket and repository (target.ts), the bucket's protection settings
-  sources/         sources (service.ts), schedules and status, the agents' uploads
+  sources/         sources (service.ts; manage.ts: delete, test, back up now), schedules
+                   and status, the agents' uploads
                    (agent.ts), Google Drive and S3 buckets (rclone), Personio (API export)
   runs/            runs: create, log, finish, cancel
   worker/          planning runs, executing them one at a time, the daily upkeep
@@ -64,6 +68,10 @@ packages/shared/src/  contracts, schedules
   (`ENCRYPTION_KEY`), never returned (the API shows hints) and never logged.
   Agent tokens are stored as SHA-256. restic and rclone get secrets in their
   environment, never in their arguments, and never the app's own environment.
+- **Settings** of the admin pages are saved by service functions that the
+  routes and the operator command (`cli/`) both call, with the actor (an
+  admin, or the `operator` only `cli/` creates). A new setting gets a module
+  in `cli/` too; the command takes secrets only on stdin.
 - **Errors:** throw `AppError` helpers (`http/errors.ts`) with short, plain
   messages. Messages from restic and rclone go through `redact`.
 - **Logging:** `logger` with ids and codes; never file names, personal data
