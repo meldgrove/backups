@@ -27,8 +27,9 @@ variable is described in [Configuration](configuration.md).
    such as `0.1`, see [Automatic updates](#automatic-updates)), `APP_URL`
    (the domain), `DATABASE_URL` (the database's internal URL), a new
    `AUTH_SECRET` and a new `ENCRYPTION_KEY` (each `openssl rand -base64 32`),
-   the `OIDC_*` values, the admins in `ADMIN_EMAILS` or `ADMIN_GROUPS`, and
-   `TZ`.
+   the `OIDC_*` values, the admins in `ADMIN_EMAILS` or `ADMIN_GROUPS`,
+   `TZ`, and `UPDATER_TOKEN` (`openssl rand -hex 32`; recommended, see
+   [Protect the update service](#protect-the-update-service)).
 6. **Deploy**, open `APP_URL`, sign in, and set up the target
    ([The bucket](deployment.md#the-bucket)), the alerts and the
    [sources](sources.md).
@@ -55,3 +56,23 @@ as on a server, but cannot switch the channel in the app.
 3. In the Backups resource, select Webhooks and copy Deploy Webhook.
 4. In the resource's environment variables, set `UPDATE_DEPLOY_HOOK_URL` to
    the webhook and `UPDATE_DEPLOY_HOOK_TOKEN` to the token, then redeploy.
+
+### Protect the update service
+
+With `UPDATER_TOKEN` set, `compose.coolify.yaml` gives the same token to
+the app and to the updater, and the updater's API takes only requests that
+carry it. Without it, everything works as before, but anything on the
+resource's Docker network can install versions through the API. The token is
+recommended, not required. From updater 0.2.4, admins see a warning under
+**Settings → Updates** while it is missing.
+
+For a resource that runs without it:
+
+1. Make sure `BACKUPS_VERSION` selects the newest release: its series, or
+   the release itself. An older version does not send the token, and its
+   update button would stop working. For an older series, take the
+   [upgrade](#upgrades) steps first.
+2. In the resource's environment variables, add `UPDATER_TOKEN` with a new
+   token from `openssl rand -hex 32`, then redeploy. The deploy reads the
+   newest release's `compose.coolify.yaml` from `stable` and pulls the
+   images again.

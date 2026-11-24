@@ -48,18 +48,19 @@ refused. This is checked at every sign-in.
 
 ## Processes and server
 
-| Variable                             | Default                         | Meaning                                                                                  |
-| ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------- |
-| `APP_ROLE`                           | `all`                           | Set by the image's command: `all`, `web`, `worker`, `migrate`.                           |
-| `PORT`, `HOST`                       | `3000`, `0.0.0.0`               | Where `web` listens in the container.                                                    |
-| `BACKUPS_PORT`                       | `3000`                          | Compose only: the host port on `127.0.0.1`.                                              |
-| `TRUST_PROXY`                        | `true` in Compose               | Reverse proxies in front that set `X-Forwarded-For`: `true` (one), a number, or `false`. |
-| `RUN_MIGRATIONS`                     | `false`                         | Apply migrations at start (single-container setups).                                     |
-| `DATABASE_POOL_SIZE`                 | `10`                            | Connections per process.                                                                 |
-| `DATABASE_STATEMENT_TIMEOUT_SECONDS` | `60`                            | Longest statement; `0`: no limit.                                                        |
-| `LOG_LEVEL`                          | `info`                          | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`.                            |
-| `WORKER_HEARTBEAT_FILE`              | `/tmp/worker-heartbeat` (image) | Touched by the worker every few seconds, for health checks.                              |
-| `UPDATER_URL`                        | `http://updater:8080`           | The updater's API for the update button; empty switches the button off.                  |
+| Variable                             | Default                         | Meaning                                                                                                                                                                                                                                    |
+| ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `APP_ROLE`                           | `all`                           | Set by the image's command: `all`, `web`, `worker`, `migrate`.                                                                                                                                                                             |
+| `PORT`, `HOST`                       | `3000`, `0.0.0.0`               | Where `web` listens in the container.                                                                                                                                                                                                      |
+| `BACKUPS_PORT`                       | `3000`                          | Compose only: the host port on `127.0.0.1`.                                                                                                                                                                                                |
+| `TRUST_PROXY`                        | `true` in Compose               | Reverse proxies in front that set `X-Forwarded-For`: `true` (one), a number, or `false`.                                                                                                                                                   |
+| `RUN_MIGRATIONS`                     | `false`                         | Apply migrations at start (single-container setups).                                                                                                                                                                                       |
+| `DATABASE_POOL_SIZE`                 | `10`                            | Connections per process.                                                                                                                                                                                                                   |
+| `DATABASE_STATEMENT_TIMEOUT_SECONDS` | `60`                            | Longest statement; `0`: no limit.                                                                                                                                                                                                          |
+| `LOG_LEVEL`                          | `info`                          | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`.                                                                                                                                                                              |
+| `WORKER_HEARTBEAT_FILE`              | `/tmp/worker-heartbeat` (image) | Touched by the worker every few seconds, for health checks.                                                                                                                                                                                |
+| `UPDATER_URL`                        | `http://updater:8080`           | The updater's API for the update button; empty switches the button off.                                                                                                                                                                    |
+| `UPDATER_TOKEN`                      |                                 | Recommended. The token the app sends to the updater (`openssl rand -hex 32`); `compose.yaml` gives the updater the same, and it then refuses requests without it ([Protect the update service](deployment.md#protect-the-update-service)). |
 
 ## Automatic updates (Compose only)
 

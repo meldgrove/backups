@@ -37,8 +37,10 @@ x-app-environment: &app-environment
   TZ: ${TZ:-UTC}
   # The reverse proxy in front of the app sets X-Forwarded-For.
   TRUST_PROXY: ${TRUST_PROXY:-true}
-  # The update button of admins asks the updater service below.
+  # The update button of admins asks the updater service below, with this
+  # token (openssl rand -hex 32), which the updater then requires.
   UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
+  UPDATER_TOKEN: ${UPDATER_TOKEN:-}
 
 x-app: &app
   image: *image
@@ -105,12 +107,14 @@ services:
   # `docker compose up --wait`, and goes back to the version before when it
   # does not become healthy. Only the app reaches its API: never publish a
   # port.
+  # With UPDATER_TOKEN set, its API takes only requests that carry the token.
   updater:
     image: ghcr.io/meldgrove/updater:0.2
     restart: unless-stopped
     environment:
       IMAGE: *image
       VERSION_VARIABLE: BACKUPS_VERSION
+      API_TOKEN: ${UPDATER_TOKEN:-}
       # A stable release installs once it has been out this long; every
       # automatic install only inside the window, if one is set (e.g.
       # 02:00-05:00, in the time zone TZ).
