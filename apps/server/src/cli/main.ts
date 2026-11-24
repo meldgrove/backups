@@ -47,6 +47,8 @@ ${SETTINGS.map((setting) => `  ${setting.name.padEnd(width)}  ${setting.label}`)
 
 Secrets go only on stdin, never in an argument; output shows hints only.
 Adding an app source prints BACKUP_URL and BACKUP_TOKEN once, for the app's .env.
+Run what prints a secret (that, a new token, the recovery kit) with
+docker compose exec -T web cli …: Docker logs what a container started with "run" prints.
 Exit codes: 0 done, 1 refused (the page's message on stderr), 2 wrong command
 or a body that is not JSON. Example bodies: ${DOCS}
 `;
