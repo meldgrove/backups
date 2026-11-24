@@ -265,7 +265,7 @@ In a running container, such as a terminal on Coolify, the command is just
   `BACKUP_URL` and `BACKUP_TOKEN`, shown this once: redirect them into a
   new file that only its owner may read, as for the recovery kit and a new
   token: `(umask 077; set -C; docker compose run --rm -T migrate cli … > agent.env)`
-  (`set -C` refuses to overwrite a file that is there already).
+  (`set -C` refuses to overwrite a regular file that is there already).
 - Exit codes: `0` done; `1` refused, with the page's message and the field
   on stderr (also a failed test); `2` a wrong command or a body that is not
   JSON.
