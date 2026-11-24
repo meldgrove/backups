@@ -264,8 +264,12 @@ In a running container, such as a terminal on Coolify, the command is just
   Meldgrove app, stdout holds only the two lines for the app's `.env`,
   `BACKUP_URL` and `BACKUP_TOKEN`, shown this once: redirect them into a
   new file that only its owner may read, as for the recovery kit and a new
-  token: `(umask 077; set -C; docker compose run --rm -T migrate cli … > agent.env)`
+  token: `(umask 077; set -C; docker compose exec -T web cli … > agent.env)`
   (`set -C` refuses to overwrite a regular file that is there already).
+- Run every command that prints a secret with `docker compose exec`, as
+  above, not `run`: Docker's log driver keeps what a container started with
+  `run` prints, so the secret would end up in a log (with `journald` or a
+  remote driver also after `--rm`).
 - Exit codes: `0` done; `1` refused, with the page's message and the field
   on stderr (also a failed test); `2` a wrong command or a body that is not
   JSON.
@@ -275,7 +279,7 @@ The bodies, as the pages send them:
 `target`: the bucket ([above](#the-bucket)). Then `cli settings test target`,
 `cli target initialize` (or `cli target connect` for an existing
 repository), the recovery kit into a new file that only its owner may read,
-`(umask 077; set -C; docker compose run --rm -T migrate cli target recovery-kit > recovery-kit.txt)`,
+`(umask 077; set -C; docker compose exec -T web cli target recovery-kit > recovery-kit.txt)`,
 store the kit offline and delete the file, and
 `cli target confirm-recovery-kit`.
 
