@@ -3,6 +3,7 @@ import { config } from "./config";
 import { logger } from "./logger";
 import { closeDb, getDb } from "./db/client";
 import { runMigrations } from "./db/migrate";
+import { sealHeartbeatUrl } from "./alerts/notify";
 import { createApp } from "./http/app";
 import { revokeRemovedAdmins, warnAboutSignIn } from "./auth/bootstrap";
 import { flushErrorReports } from "./error-reporting";
@@ -45,7 +46,10 @@ async function main() {
       await abortAllUploads();
     });
   }
-  if (role === "all" || role === "worker") stops.push(await startWorker());
+  if (role === "all" || role === "worker") {
+    await sealHeartbeatUrl(getDb());
+    stops.push(await startWorker());
+  }
 
   let stopping = false;
   const stop = async (signal: string) => {

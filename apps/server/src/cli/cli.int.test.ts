@@ -356,9 +356,10 @@ describe("cli settings … notifications", () => {
       expect(applied.json()).not.toHaveProperty("heartbeatUrl");
       expect((await cli(["settings", "show", "notifications"])).stdout).toBe(applied.stdout);
       expect((await cli(["settings", "list"])).stdout).toContain(`email off; server localhost:${SMTP_PORT}`);
-      expect((await cli(["settings", "list"])).stdout).toContain(`heartbeat ${address}\n`);
+      expect((await cli(["settings", "list"])).stdout).toContain(`heartbeat http://${address}/…\n`);
+      expect(JSON.stringify(await stored("notifications"))).toMatch(/"heartbeatUrl":"v1:/);
 
-      // Left out of the body, the saved URL stays; "" turns the heartbeat off, as on the page.
+      // Left out of the body, the saved URL stays; "" turns the heartbeat off.
       await cli(["settings", "apply", "notifications"], { email, notifyRecovery: false });
       const tested = await cli(["settings", "test", "notifications", "--heartbeat"]);
       expect(tested).toMatchObject({ code: 0, stderr: "" });

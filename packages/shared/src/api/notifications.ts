@@ -27,7 +27,10 @@ export const notificationsInputSchema = z.object({
     from: z.union([z.literal(""), z.email("Enter the sender's address")]),
     recipients,
   }),
-  heartbeatUrl: z.union([z.literal(""), z.url({ protocol: /^https?$/, message: "Enter an http(s) URL" })]),
+  /** A secret: left out, the saved one stays; blank or null turns the heartbeat off. */
+  heartbeatUrl: z
+    .union([z.literal(""), z.url({ protocol: /^https?$/, message: "Enter an http(s) URL" })])
+    .nullish(),
   /** Also tell when a source is back to normal. */
   notifyRecovery: z.boolean(),
 });
@@ -44,7 +47,8 @@ export const notificationsSchema = z.object({
     from: z.string(),
     recipients: z.array(z.string()),
   }),
-  heartbeatUrl: z.string(),
+  /** The saved heartbeat URL's server; its path authorizes the pings. Null without one. */
+  heartbeatUrlHint: z.string().nullable(),
   notifyRecovery: z.boolean(),
   /** The last heartbeat call and its outcome. */
   heartbeat: z.object({ at: z.string(), ok: z.boolean(), message: z.string().nullable() }).nullable(),
@@ -62,7 +66,7 @@ export const DEFAULT_NOTIFICATIONS: Notifications = {
     from: "",
     recipients: [],
   },
-  heartbeatUrl: "",
+  heartbeatUrlHint: null,
   notifyRecovery: true,
   heartbeat: null,
 };

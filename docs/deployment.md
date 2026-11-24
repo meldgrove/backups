@@ -301,9 +301,9 @@ store the kit offline and delete the file, and
 ```
 
 `notifications` (`security`: `tls` on port 465, `starttls` on 587, or
-`none`). The heartbeat URL's path authorizes the pings, so the command
-treats it as a secret: `show` prints only its origin as `heartbeatUrlHint`, a body without
-`heartbeatUrl` keeps the saved one, and `"heartbeatUrl": ""` turns the
+`none`). The heartbeat URL's path authorizes the pings, so it is a secret as
+on the page: `show` prints only its server as `heartbeatUrlHint`, a body
+without `heartbeatUrl` keeps the saved one, and `"heartbeatUrl": ""` turns the
 heartbeat off. Then `cli settings test notifications --email` and
 `--heartbeat`.
 

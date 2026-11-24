@@ -14,7 +14,7 @@ import type { Db, DbOrTx } from "../db/client";
 import { sources } from "../db/schema";
 import { logger } from "../logger";
 import { decryptSecret, encryptSecret, secretHint } from "../core/crypto";
-import { readSetting, writeSetting } from "../core/settings";
+import { readSetting, readSettingForUpdate, updateSetting, writeSetting } from "../core/settings";
 import { audit } from "../core/audit";
 import { isOperator, type Actor } from "../auth/principal";
 import { latestRun } from "../runs/service";
@@ -34,22 +34,50 @@ const HEARTBEAT_STATE_KEY = "heartbeat";
 const SYSTEM_ALERT_KEY = "system_alert";
 const HEARTBEAT_EVERY_MS = 15 * 60_000;
 
-type StoredNotifications = Omit<Notifications, "heartbeat" | "email"> & {
+type StoredNotifications = {
   email: Omit<Notifications["email"], "passwordHint"> & { password: string | null };
+  /** Encrypted, or as 0.1.4 stored it until `sealHeartbeatUrl` ran; "" without one. */
+  heartbeatUrl: string;
+  notifyRecovery: boolean;
 };
 type HeartbeatState = { at: string; ok: boolean; message: string | null };
 
-async function stored(db: DbOrTx): Promise<StoredNotifications> {
-  const value = await readSetting<StoredNotifications>(db, NOTIFICATIONS_KEY);
-  if (value) return value;
-  const { heartbeat: _heartbeat, email, ...rest } = DEFAULT_NOTIFICATIONS;
+function unsaved(): StoredNotifications {
+  const { email, notifyRecovery } = DEFAULT_NOTIFICATIONS;
   const { passwordHint: _hint, ...emailRest } = email;
-  return { ...rest, email: { ...emailRest, password: null } };
+  return { email: { ...emailRest, password: null }, heartbeatUrl: "", notifyRecovery };
+}
+
+async function stored(db: DbOrTx): Promise<StoredNotifications> {
+  return (await readSetting<StoredNotifications>(db, NOTIFICATIONS_KEY)) ?? unsaved();
+}
+
+/** The heartbeat URL of a stored one, or null when it was encrypted with another ENCRYPTION_KEY. */
+function readHeartbeatUrl(saved: string): string | null {
+  // As 0.1.4 stored it.
+  if (/^https?:/i.test(saved)) return saved;
+  try {
+    return decryptSecret(saved);
+  } catch {
+    return null;
+  }
+}
+
+/** Encrypts the heartbeat URL that 0.1.4 and earlier stored; the worker does it when it starts. */
+export async function sealHeartbeatUrl(db: Db): Promise<void> {
+  await db.transaction(async (tx) => {
+    const value = await readSettingForUpdate<StoredNotifications>(tx, NOTIFICATIONS_KEY);
+    if (!value || !/^https?:/i.test(value.heartbeatUrl)) return;
+    const heartbeatUrl = encryptSecret(value.heartbeatUrl);
+    await writeSetting<StoredNotifications>(tx, NOTIFICATIONS_KEY, { ...value, heartbeatUrl });
+    logger.info("heartbeat URL encrypted");
+  });
 }
 
 export async function notificationsView(db: DbOrTx): Promise<Notifications> {
-  const value = await stored(db);
+  const { heartbeatUrl, notifyRecovery, ...value } = await stored(db);
   const { password, ...email } = value.email;
+  const url = heartbeatUrl ? URL.parse(readHeartbeatUrl(heartbeatUrl) ?? "") : null;
   let hint: string | null = null;
   if (password) {
     try {
@@ -59,8 +87,9 @@ export async function notificationsView(db: DbOrTx): Promise<Notifications> {
     }
   }
   return {
-    ...value,
     email: { ...email, passwordHint: hint },
+    heartbeatUrlHint: heartbeatUrl ? (url ? `${url.origin}/…` : "…") : null,
+    notifyRecovery,
     heartbeat: await readSetting<HeartbeatState>(db, HEARTBEAT_STATE_KEY),
   };
 }
@@ -70,14 +99,21 @@ export async function saveNotifications(
   input: z.output<typeof notificationsInputSchema>,
   actor: Actor,
 ) {
-  const current = await stored(db);
   const { password, ...email } = input.email;
-  const next: StoredNotifications = {
-    heartbeatUrl: input.heartbeatUrl,
-    notifyRecovery: input.notifyRecovery,
-    email: { ...email, password: password ? encryptSecret(password) : current.email.password },
-  };
-  await writeSetting(db, NOTIFICATIONS_KEY, next);
+  // Locked: what a save keeps is what another save or the worker's start just wrote.
+  await updateSetting<StoredNotifications>(db, NOTIFICATIONS_KEY, (value) => {
+    const current = value ?? unsaved();
+    return {
+      heartbeatUrl:
+        input.heartbeatUrl === undefined
+          ? current.heartbeatUrl
+          : input.heartbeatUrl
+            ? encryptSecret(input.heartbeatUrl)
+            : "",
+      notifyRecovery: input.notifyRecovery,
+      email: { ...email, password: password ? encryptSecret(password) : current.email.password },
+    };
+  });
   await audit(db, actor, {
     action: "notifications.update",
     entityType: "notifications",
@@ -176,6 +212,16 @@ export async function callHeartbeat(url: string): Promise<{ ok: boolean; message
   }
 }
 
+/** Calls the saved heartbeat URL and records the outcome. */
+async function sendHeartbeat(db: DbOrTx, saved: string, now: Date) {
+  const url = readHeartbeatUrl(saved);
+  const result = url
+    ? await callHeartbeat(url)
+    : { ok: false, message: "The saved URL cannot be read with this ENCRYPTION_KEY: enter it again" };
+  await writeSetting(db, HEARTBEAT_STATE_KEY, { at: now.toISOString(), ...result });
+  return result;
+}
+
 const problemText = { failed: "failed", overdue: "is overdue" } as const;
 
 /**
@@ -239,8 +285,7 @@ export async function checkAlerts(db: Db, now = new Date()) {
   if (healthy && settings.heartbeatUrl) {
     const last = await readSetting<HeartbeatState>(db, HEARTBEAT_STATE_KEY);
     if (!last || now.getTime() - new Date(last.at).getTime() >= HEARTBEAT_EVERY_MS - 30_000) {
-      const result = await callHeartbeat(settings.heartbeatUrl);
-      await writeSetting(db, HEARTBEAT_STATE_KEY, { at: now.toISOString(), ...result });
+      const result = await sendHeartbeat(db, settings.heartbeatUrl, now);
       if (!result.ok) logger.warn({ code: result.message }, "heartbeat call failed");
     }
   }
@@ -268,8 +313,7 @@ async function notify(db: Db, sourceId: string, state: "failed" | "overdue" | nu
 export async function testHeartbeat(db: DbOrTx): Promise<TestResult> {
   const settings = await stored(db);
   if (!settings.heartbeatUrl) return { ok: false, message: "Set a heartbeat URL first" };
-  const result = await callHeartbeat(settings.heartbeatUrl);
-  await writeSetting(db, HEARTBEAT_STATE_KEY, { at: new Date().toISOString(), ...result });
+  const result = await sendHeartbeat(db, settings.heartbeatUrl, new Date());
   return { ok: result.ok, message: result.ok ? "The heartbeat URL answered" : (result.message ?? "Failed") };
 }
 
