@@ -6,7 +6,6 @@ import {
   sendTestEmail,
   testHeartbeat,
 } from "../alerts/notify";
-import { secretHint } from "../core/crypto";
 import { readSetting } from "../core/settings";
 import { getDb } from "../db/client";
 import { parseWith } from "../http/errors";
@@ -25,16 +24,15 @@ function host(url: string): string {
 }
 
 /**
- * What `show` prints: the page's read, with the heartbeat URL as a hint (its
- * address and the last characters of its path, which authorizes the pings).
+ * What `show` prints: the page's read, with only the heartbeat URL's origin
+ * as its hint (its path and query authorize the pings).
  */
 async function view() {
   const { heartbeatUrl, ...rest } = await notificationsView(getDb());
   let hint: string | null = null;
   if (heartbeatUrl) {
     try {
-      const url = new URL(heartbeatUrl);
-      hint = `${url.origin}/${secretHint(`${url.pathname}${url.search}`.slice(1))}`;
+      hint = `${new URL(heartbeatUrl).origin}/…`;
     } catch {
       hint = "…";
     }

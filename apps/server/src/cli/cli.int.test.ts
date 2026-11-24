@@ -143,7 +143,7 @@ describe("cli settings … target, and cli target …", () => {
     const created = await cli(["target", "initialize"]);
     expect(created).toMatchObject({ code: 0 });
     expect(created.json()).toMatchObject({ repository: { state: "ready", hasPassword: true } });
-    expect(created.stderr).toContain("(umask 077; cli target recovery-kit > recovery-kit.txt)");
+    expect(created.stderr).toContain("(umask 077; set -C; cli target recovery-kit > recovery-kit.txt)");
     expect((await auditEntries("repository.create"))[0]).toMatchObject({
       actorEmail: "operator",
       summary: `Created the repository at ${url} (cli target initialize)`,
@@ -352,7 +352,7 @@ describe("cli settings … notifications", () => {
         heartbeatUrl: `http://${address}/${HEARTBEAT_PATH}`,
         notifyRecovery: true,
       });
-      expect(applied.json()).toMatchObject({ heartbeatUrlHint: `http://${address}/…path` });
+      expect(applied.json()).toMatchObject({ heartbeatUrlHint: `http://${address}/…` });
       expect(applied.json()).not.toHaveProperty("heartbeatUrl");
       expect((await cli(["settings", "show", "notifications"])).stdout).toBe(applied.stdout);
       expect((await cli(["settings", "list"])).stdout).toContain(`email off; server localhost:${SMTP_PORT}`);

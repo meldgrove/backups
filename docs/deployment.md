@@ -245,7 +245,7 @@ In a running container, such as a terminal on Coolify, the command is just
 | `cli settings test notifications --email\|--heartbeat` | Sends a test email to the recipients, or calls the heartbeat URL                                                    |
 | `cli target initialize`                                | **Create repository**: `restic init` with a new password                                                            |
 | `cli target connect`                                   | **Connect to an existing repository** with the password in the body `{"password": "…"}`                             |
-| `cli target recovery-kit`                              | **Download recovery kit**, into a new private file (`umask 077`, below): never onto a terminal                      |
+| `cli target recovery-kit`                              | **Download recovery kit**, into a new private file (below): never onto a terminal                                   |
 | `cli target confirm-recovery-kit`                      | **I stored the recovery kit**                                                                                       |
 | `cli sources run <id>`                                 | **Back up now**                                                                                                     |
 | `cli tokens create agent --source <id>`                | **New token** of an app source: prints only the token                                                               |
@@ -263,8 +263,9 @@ In a running container, such as a terminal on Coolify, the command is just
 - `apply sources` without `--id` adds a source; its ID goes to stderr. For a
   Meldgrove app, stdout holds only the two lines for the app's `.env`,
   `BACKUP_URL` and `BACKUP_TOKEN`, shown this once: redirect them into a
-  new file that only root may read, as for the recovery kit and a new
-  token: `(umask 077; docker compose run --rm -T migrate cli … > agent.env)`.
+  new file that only its owner may read, as for the recovery kit and a new
+  token: `(umask 077; set -C; docker compose run --rm -T migrate cli … > agent.env)`
+  (`set -C` refuses to overwrite a file that is there already).
 - Exit codes: `0` done; `1` refused, with the page's message and the field
   on stderr (also a failed test); `2` a wrong command or a body that is not
   JSON.
@@ -273,8 +274,8 @@ The bodies, as the pages send them:
 
 `target`: the bucket ([above](#the-bucket)). Then `cli settings test target`,
 `cli target initialize` (or `cli target connect` for an existing
-repository), the recovery kit into a new file that only root may read,
-`(umask 077; docker compose run --rm -T migrate cli target recovery-kit > recovery-kit.txt)`,
+repository), the recovery kit into a new file that only its owner may read,
+`(umask 077; set -C; docker compose run --rm -T migrate cli target recovery-kit > recovery-kit.txt)`,
 store the kit offline and delete the file, and
 `cli target confirm-recovery-kit`.
 
@@ -297,7 +298,7 @@ store the kit offline and delete the file, and
 
 `notifications` (`security`: `tls` on port 465, `starttls` on 587, or
 `none`). The heartbeat URL's path authorizes the pings, so the command
-treats it as a secret: `show` prints `heartbeatUrlHint`, a body without
+treats it as a secret: `show` prints only its origin as `heartbeatUrlHint`, a body without
 `heartbeatUrl` keeps the saved one, and `"heartbeatUrl": ""` turns the
 heartbeat off. Then `cli settings test notifications --email` and
 `--heartbeat`.

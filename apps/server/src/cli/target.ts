@@ -125,7 +125,7 @@ export async function targetCommand(args: string[], io: CliIo): Promise<number> 
       await initializeTarget(db, operator("cli target initialize"));
       io.out(json(await targetView(db)));
       io.err(
-        "Created the repository. Write the recovery kit now and store it offline: (umask 077; cli target recovery-kit > recovery-kit.txt)\n",
+        "Created the repository. Write the recovery kit now and store it offline: (umask 077; set -C; cli target recovery-kit > recovery-kit.txt)\n",
       );
       return 0;
     }
@@ -139,7 +139,7 @@ export async function targetCommand(args: string[], io: CliIo): Promise<number> 
       return 0;
     }
     case "recovery-kit": {
-      const usage = "(umask 077; cli target recovery-kit > recovery-kit.txt)";
+      const usage = "(umask 077; set -C; cli target recovery-kit > recovery-kit.txt)";
       parse(rest, {}, usage);
       if (io.stdoutIsTerminal) {
         throw new UsageError(
