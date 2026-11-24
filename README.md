@@ -61,3 +61,9 @@ Drive and S3 buckets). Open http://localhost:5173 and sign in as
 `ada@example.org` (password `backups-dev`). Set the target under
 **Settings → Target** with the values in `.env.example`, create the
 repository, then add a source.
+
+## License
+
+Copyright 2026 Meldgrove
+
+Licensed under the [Apache License 2.0](LICENSE).
