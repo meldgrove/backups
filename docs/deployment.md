@@ -245,7 +245,7 @@ In a running container, such as a terminal on Coolify, the command is just
 | `cli settings test notifications --email\|--heartbeat` | Sends a test email to the recipients, or calls the heartbeat URL                                                    |
 | `cli target initialize`                                | **Create repository**: `restic init` with a new password                                                            |
 | `cli target connect`                                   | **Connect to an existing repository** with the password in the body `{"password": "…"}`                             |
-| `cli target recovery-kit > recovery-kit.txt`           | **Download recovery kit**, into a file: never onto a terminal                                                       |
+| `cli target recovery-kit`                              | **Download recovery kit**, into a new private file (`umask 077`, below): never onto a terminal                      |
 | `cli target confirm-recovery-kit`                      | **I stored the recovery kit**                                                                                       |
 | `cli sources run <id>`                                 | **Back up now**                                                                                                     |
 | `cli tokens create agent --source <id>`                | **New token** of an app source: prints only the token                                                               |
@@ -296,8 +296,11 @@ store the kit offline and delete the file, and
 ```
 
 `notifications` (`security`: `tls` on port 465, `starttls` on 587, or
-`none`; `"heartbeatUrl": ""` turns the heartbeat off). Then
-`cli settings test notifications --email` and `--heartbeat`.
+`none`). The heartbeat URL's path authorizes the pings, so the command
+treats it as a secret: `show` prints `heartbeatUrlHint`, a body without
+`heartbeatUrl` keeps the saved one, and `"heartbeatUrl": ""` turns the
+heartbeat off. Then `cli settings test notifications --email` and
+`--heartbeat`.
 
 ```json
 {

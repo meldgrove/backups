@@ -6,9 +6,10 @@ import {
   sendTestEmail,
   testHeartbeat,
 } from "../alerts/notify";
+import { secretHint } from "../core/crypto";
 import { readSetting } from "../core/settings";
 import { getDb } from "../db/client";
-import { parseJsonBody } from "../http/json";
+import { parseWith } from "../http/errors";
 import { UsageError } from "./io";
 import type { Setting } from "./settings";
 
@@ -21,6 +22,24 @@ function host(url: string): string {
   } catch {
     return "set";
   }
+}
+
+/**
+ * What `show` prints: the page's read, with the heartbeat URL as a hint (its
+ * address and the last characters of its path, which authorizes the pings).
+ */
+async function view() {
+  const { heartbeatUrl, ...rest } = await notificationsView(getDb());
+  let hint: string | null = null;
+  if (heartbeatUrl) {
+    try {
+      const url = new URL(heartbeatUrl);
+      hint = `${url.origin}/${secretHint(`${url.pathname}${url.search}`.slice(1))}`;
+    } catch {
+      hint = "…";
+    }
+  }
+  return { ...rest, heartbeatUrlHint: hint };
 }
 
 /** `notifications`: alert emails and the heartbeat (Notifications page, PUT /api/v1/notifications). */
@@ -42,10 +61,16 @@ export const notifications: Setting = {
     hints.push(heartbeatUrl ? `heartbeat ${host(heartbeatUrl)}` : "no heartbeat");
     return [{ name: "notifications", state: email.enabled && !complete ? "incomplete" : "set", hints }];
   },
-  show: () => notificationsView(getDb()),
+  show: () => view(),
   async apply(actor, body) {
-    await saveNotifications(getDb(), parseJsonBody(body, notificationsInputSchema), actor);
-    return { json: await notificationsView(getDb()) };
+    const db = getDb();
+    // As a secret: a body without heartbeatUrl keeps the saved one; "" turns the heartbeat off.
+    const value: unknown = JSON.parse(body);
+    if (value && typeof value === "object" && !Array.isArray(value) && !("heartbeatUrl" in value)) {
+      Object.assign(value, { heartbeatUrl: (await notificationsView(db)).heartbeatUrl });
+    }
+    await saveNotifications(db, parseWith(notificationsInputSchema, value), actor);
+    return { json: await view() };
   },
   testOptions: { options: { email: { type: "boolean" }, heartbeat: { type: "boolean" } }, usage: TEST_USAGE },
   async test(actor, _id, { email, heartbeat }) {

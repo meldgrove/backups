@@ -32,7 +32,8 @@ Settings:
 Target:
   cli target initialize                            create the restic repository, with a new password
   cli target connect < password.json               use an existing repository: {"password": "…"}
-  cli target recovery-kit > recovery-kit.txt       write the recovery kit (never to a terminal)
+  (umask 077; cli target recovery-kit > recovery-kit.txt)
+                                                   write the recovery kit into a new private file
   cli target confirm-recovery-kit                  record that the recovery kit is stored offline
 
 Sources and tokens:

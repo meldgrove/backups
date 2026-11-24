@@ -33,12 +33,13 @@ const tooLarge = () => new AppError(413, "payload_too_large", "The body is large
 /**
  * A body pasted into a terminal (Coolify's): read in raw mode, so the
  * terminal shows nothing and does not cut a line at its 4 KiB limit. Ctrl-D
- * ends the body; Ctrl-C stops the command and saves nothing.
+ * ends the body; Ctrl-C stops the command and saves nothing. The rest of a
+ * body over the limit is read and dropped, still in raw mode, until Ctrl-D.
  */
 function readPasted(): Promise<Buffer> {
   const stdin = process.stdin as ReadStream;
-  process.stderr.write("Paste the JSON body (it is not shown), then press Ctrl-D.\n");
   stdin.setRawMode(true);
+  process.stderr.write("Paste the JSON body (it is not shown), then press Ctrl-D.\n");
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -59,12 +60,9 @@ function readPasted(): Promise<Buffer> {
       }
       const part = end === -1 ? chunk : chunk.subarray(0, end);
       size += part.length;
-      if (size > MAX_BODY_BYTES) {
-        finish(tooLarge());
-        return;
-      }
-      chunks.push(part);
-      if (end !== -1) finish();
+      if (size > MAX_BODY_BYTES) chunks.length = 0;
+      else chunks.push(part);
+      if (end !== -1) finish(size > MAX_BODY_BYTES ? tooLarge() : undefined);
     };
     stdin.on("data", onData);
     stdin.resume();

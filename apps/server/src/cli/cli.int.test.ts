@@ -21,7 +21,9 @@ const SMTP_PORT = Number(process.env.TEST_SMTP_PORT ?? 1035);
 
 const SMTP_PASSWORD = "smtp-password-7f3a";
 const PERSONIO_SECRET = "personio-secret-2c9e";
-const SECRETS = [TEST_S3.secretAccessKey, SMTP_PASSWORD, PERSONIO_SECRET];
+/** The heartbeat URL's path authorizes the pings: the command shows only a hint of it. */
+const HEARTBEAT_PATH = "ping/c0ffee-secret-path";
+const SECRETS = [TEST_S3.secretAccessKey, SMTP_PASSWORD, PERSONIO_SECRET, HEARTBEAT_PATH];
 
 /** Everything the command printed in this test, and every log call. */
 let printed: string[];
@@ -141,7 +143,7 @@ describe("cli settings … target, and cli target …", () => {
     const created = await cli(["target", "initialize"]);
     expect(created).toMatchObject({ code: 0 });
     expect(created.json()).toMatchObject({ repository: { state: "ready", hasPassword: true } });
-    expect(created.stderr).toContain("cli target recovery-kit > recovery-kit.txt");
+    expect(created.stderr).toContain("(umask 077; cli target recovery-kit > recovery-kit.txt)");
     expect((await auditEntries("repository.create"))[0]).toMatchObject({
       actorEmail: "operator",
       summary: `Created the repository at ${url} (cli target initialize)`,
@@ -332,7 +334,7 @@ describe("cli settings … notifications", () => {
     });
   });
 
-  it("calls the heartbeat URL and shows only its host in the list", async () => {
+  it("keeps the heartbeat URL write-only, as a secret, and calls it", async () => {
     const calls: string[] = [];
     const server = createServer((incoming, response) => {
       calls.push(incoming.url ?? "");
@@ -345,18 +347,30 @@ describe("cli settings … notifications", () => {
         code: 1,
         stderr: "Set a heartbeat URL first\n",
       });
-      await cli(["settings", "apply", "notifications"], {
+      const applied = await cli(["settings", "apply", "notifications"], {
         email: { ...email, enabled: false },
-        heartbeatUrl: `http://${address}/ping/c0ffee-secret-path`,
+        heartbeatUrl: `http://${address}/${HEARTBEAT_PATH}`,
         notifyRecovery: true,
       });
+      expect(applied.json()).toMatchObject({ heartbeatUrlHint: `http://${address}/…path` });
+      expect(applied.json()).not.toHaveProperty("heartbeatUrl");
+      expect((await cli(["settings", "show", "notifications"])).stdout).toBe(applied.stdout);
       expect((await cli(["settings", "list"])).stdout).toContain(`email off; server localhost:${SMTP_PORT}`);
       expect((await cli(["settings", "list"])).stdout).toContain(`heartbeat ${address}\n`);
-      expect((await cli(["settings", "list"])).stdout).not.toContain("c0ffee");
+
+      // Left out of the body, the saved URL stays; "" turns the heartbeat off, as on the page.
+      await cli(["settings", "apply", "notifications"], { email, notifyRecovery: false });
       const tested = await cli(["settings", "test", "notifications", "--heartbeat"]);
       expect(tested).toMatchObject({ code: 0, stderr: "" });
       expect(tested.json()).toEqual({ ok: true, message: "The heartbeat URL answered" });
-      expect(calls).toEqual(["/ping/c0ffee-secret-path"]);
+      expect(calls).toEqual([`/${HEARTBEAT_PATH}`]);
+      const off = await cli(["settings", "apply", "notifications"], {
+        email,
+        heartbeatUrl: "",
+        notifyRecovery: true,
+      });
+      expect(off.json()).toMatchObject({ heartbeatUrlHint: null });
+      expect((await cli(["settings", "list"])).stdout).toContain("no heartbeat\n");
     } finally {
       server.close();
     }
@@ -648,7 +662,11 @@ describe("the admin pages and the command", () => {
       },
     });
     expect(saved.status).toBe(200);
-    expect((await cli(["settings", "show", "notifications"])).json()).toEqual(saved.body);
+    const { heartbeatUrl: _none, ...page } = saved.body as Record<string, unknown>;
+    expect((await cli(["settings", "show", "notifications"])).json()).toEqual({
+      ...page,
+      heartbeatUrlHint: null,
+    });
     expect((await auditEntries("notifications.update"))[0]).toMatchObject({
       actorId: admin.id,
       actorEmail: "ada@example.org",
