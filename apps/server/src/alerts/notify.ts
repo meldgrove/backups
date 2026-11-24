@@ -21,6 +21,7 @@ import { latestRun } from "../runs/service";
 import { listSourceRows, sourceViews } from "../sources/service";
 import { PROBLEM_STATUSES } from "../sources/schedule";
 import { readTarget } from "../target/target";
+import { smtpReply } from "./smtp-reply";
 
 /*
  * Alerts: an email when a source's backup fails or is overdue (once per
@@ -100,15 +101,17 @@ export async function sendMail(
   if (!settings.host || !settings.from || settings.recipients.length === 0) {
     throw new Error("Set the SMTP server, the sender and at least one recipient");
   }
+  const login = {
+    username: settings.username,
+    password: settings.username && settings.password ? decryptSecret(settings.password) : "",
+  };
   const transport = nodemailer.createTransport({
     host: settings.host,
     port: settings.port,
     secure: settings.security === "tls",
     requireTLS: settings.security === "starttls",
     ignoreTLS: settings.security === "none",
-    auth: settings.username
-      ? { user: settings.username, pass: settings.password ? decryptSecret(settings.password) : "" }
-      : undefined,
+    auth: login.username ? { user: login.username, pass: login.password } : undefined,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 30_000,
@@ -123,9 +126,12 @@ export async function sendMail(
   } catch (error) {
     const code =
       (error as { code?: string; responseCode?: number }).responseCode ?? (error as { code?: string }).code;
-    throw new Error(`The mail server refused: ${code ?? (error as Error).message}`.slice(0, 300), {
-      cause: error,
-    });
+    const reply = smtpReply(error, login);
+    // With a reply, nothing is lost: the cause would only repeat it, as it came, in the log.
+    throw new Error(
+      `The mail server refused: ${reply ?? code ?? (error as Error).message}`.slice(0, 300),
+      reply ? undefined : { cause: error },
+    );
   } finally {
     transport.close();
   }
