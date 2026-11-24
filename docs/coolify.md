@@ -44,10 +44,9 @@ browser, as on a server
 open the Terminal of the resource, choose the `web` container and run
 `cli settings list`.
 
-- `cli settings apply <name>` in the terminal turns the echo off and asks
-  for the body: paste it, press Enter, then Ctrl-D. Nothing pasted is shown.
-  A terminal line holds at most 4,095 bytes: paste a long body (such as a
-  Google service account key) over several lines.
+- `cli settings apply <name>` in the terminal asks for the body: paste it,
+  then press Ctrl-D (Ctrl-C stops and saves nothing). Nothing pasted is
+  shown.
 - `cli target recovery-kit` writes the kit only into a file, never onto the
   terminal. A file in the container is no place for it: download the kit on
   the **Target** page instead.

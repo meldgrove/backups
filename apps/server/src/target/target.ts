@@ -1,8 +1,10 @@
+import pg from "pg";
 import type { BucketProtection, RepositoryState, Target, TargetInput } from "@backups/shared/api/target";
 import type { maintenanceInputSchema, targetInputSchema } from "@backups/shared/api/target";
 import type { z } from "zod";
 import { config } from "../config";
-import { getPool, type DbOrTx } from "../db/client";
+import { connectionOptions, type DbOrTx } from "../db/client";
+import { logger } from "../logger";
 import { audit } from "../core/audit";
 import { decryptSecret, encryptSecret, randomSecret, secretHint } from "../core/crypto";
 import { readSetting, readSettingForUpdate, writeSetting } from "../core/settings";
@@ -245,9 +247,11 @@ function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
 const REPOSITORY_LOCK = 4_217_356_901;
 
 async function underRepositoryLock<T>(work: () => Promise<T>): Promise<T> {
-  // A connection of its own: the lock belongs to its session, and no transaction stays open while restic runs.
-  const client = await getPool().connect();
-  let broken: Error | undefined;
+  // A connection of its own, outside the pool (which may have a single connection):
+  // the lock belongs to its session, and no transaction stays open while restic runs.
+  const client = new pg.Client(connectionOptions());
+  client.on("error", (error) => logger.warn({ err: error }, "database client error"));
+  await client.connect();
   try {
     const { rows } = await client.query<{ locked: boolean }>("select pg_try_advisory_lock($1) as locked", [
       REPOSITORY_LOCK,
@@ -258,16 +262,10 @@ async function underRepositoryLock<T>(work: () => Promise<T>): Promise<T> {
         "repository_busy",
       );
     }
-    try {
-      return await work();
-    } finally {
-      await client.query("select pg_advisory_unlock($1)", [REPOSITORY_LOCK]).catch((error: unknown) => {
-        // Closing the connection releases the lock too.
-        broken = error instanceof Error ? error : new Error("unlock failed");
-      });
-    }
+    return await work();
   } finally {
-    client.release(broken);
+    // Ending the session releases the lock.
+    await client.end().catch(() => undefined);
   }
 }
 

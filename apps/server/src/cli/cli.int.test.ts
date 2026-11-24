@@ -5,7 +5,8 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
-import { getDb } from "../db/client";
+import { resetConfigForTests } from "../config";
+import { closeDb, getDb } from "../db/client";
 import { auditLog, runs, settings, sources } from "../db/schema";
 import { logger } from "../logger";
 import { SERVER_ROOT } from "../paths";
@@ -200,6 +201,34 @@ describe("cli settings … target, and cli target …", () => {
       `${(tested.json() as { repository: { message: string } }).repository.message}\n`,
     );
     expect(tested.stderr).not.toContain("not-the-secret-key-9b1d");
+  });
+});
+
+describe("cli target initialize, with a pool of one connection", () => {
+  it("creates the repository: the lock has a connection of its own", async () => {
+    await cli(["settings", "apply", "target"], targetBody(prefix()));
+    await closeDb();
+    process.env.DATABASE_POOL_SIZE = "1";
+    resetConfigForTests();
+    try {
+      const created = await cli(["target", "initialize"]);
+      expect(created).toMatchObject({ code: 0 });
+      expect(created.json()).toMatchObject({ repository: { state: "ready" } });
+    } finally {
+      await closeDb();
+      delete process.env.DATABASE_POOL_SIZE;
+      resetConfigForTests();
+    }
+  });
+});
+
+describe("the audit log", () => {
+  it("keeps the operator's command after a long summary", async () => {
+    const endpoint = `${TEST_S3.endpoint}/${"a".repeat(480)}`;
+    expect((await cli(["settings", "apply", "target"], { ...targetBody(prefix()), endpoint })).code).toBe(0);
+    const [entry] = await auditEntries("target.update");
+    expect(entry!.summary).toHaveLength(500);
+    expect(entry!.summary.endsWith(" (cli settings apply target)")).toBe(true);
   });
 });
 

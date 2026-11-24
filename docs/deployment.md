@@ -263,20 +263,20 @@ In a running container, such as a terminal on Coolify, the command is just
 - `apply sources` without `--id` adds a source; its ID goes to stderr. For a
   Meldgrove app, stdout holds only the two lines for the app's `.env`,
   `BACKUP_URL` and `BACKUP_TOKEN`, shown this once: redirect them into a
-  file (`> agent.env`).
+  new file that only root may read, as for the recovery kit and a new
+  token: `(umask 077; docker compose run --rm -T migrate cli … > agent.env)`.
 - Exit codes: `0` done; `1` refused, with the page's message and the field
   on stderr (also a failed test); `2` a wrong command or a body that is not
   JSON.
-- `test` of a Google Drive or S3 bucket source reports the free space where
-  it runs: `docker compose exec worker cli …` shows that of the `data`
-  volume.
 
 The bodies, as the pages send them:
 
 `target`: the bucket ([above](#the-bucket)). Then `cli settings test target`,
 `cli target initialize` (or `cli target connect` for an existing
-repository), `cli target recovery-kit > recovery-kit.txt`, store the kit
-offline and delete the file, and `cli target confirm-recovery-kit`.
+repository), the recovery kit into a new file that only root may read,
+`(umask 077; docker compose run --rm -T migrate cli target recovery-kit > recovery-kit.txt)`,
+store the kit offline and delete the file, and
+`cli target confirm-recovery-kit`.
 
 ```json
 {

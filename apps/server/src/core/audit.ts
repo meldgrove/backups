@@ -21,7 +21,10 @@ export async function audit(
     action: entry.action,
     entityType: entry.entityType,
     entityId: entry.entityId ?? null,
-    summary: (operator ? `${entry.summary} (${operator.command})` : entry.summary).slice(0, 500),
+    // The command stays whole, also after a long summary.
+    summary: operator
+      ? `${entry.summary.slice(0, 500 - operator.command.length - 3)} (${operator.command})`
+      : entry.summary.slice(0, 500),
   });
 }
 

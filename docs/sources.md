@@ -187,8 +187,8 @@ a `name`, a `schedule` and a `retention`:
 - `"enabled": false` pauses the source.
 
 A **Meldgrove app**. stdout holds only `BACKUP_URL` and `BACKUP_TOKEN` for
-the app's `.env`; `cli tokens create agent --source <id>` issues a new
-token later.
+the app's `.env` (redirect it into a new file with `umask 077`);
+`cli tokens create agent --source <id>` issues a new token later.
 
 ```json
 {
