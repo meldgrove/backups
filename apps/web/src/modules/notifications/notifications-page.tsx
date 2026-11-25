@@ -38,7 +38,7 @@ type Values = {
   password: SecretValue;
   from: string;
   recipients: string;
-  heartbeatUrl: string;
+  heartbeatUrl: SecretValue;
   notifyRecovery: boolean;
 };
 
@@ -52,7 +52,7 @@ function valuesOf(saved: Notifications): Values {
     password: initialSecret(saved.email.passwordHint !== null),
     from: saved.email.from,
     recipients: saved.email.recipients.join("\n"),
-    heartbeatUrl: saved.heartbeatUrl,
+    heartbeatUrl: initialSecret(saved.heartbeatUrlHint !== null),
     notifyRecovery: saved.notifyRecovery,
   };
 }
@@ -72,7 +72,7 @@ function inputOf(values: Values): NotificationsInput {
         .map((line) => line.trim())
         .filter(Boolean),
     },
-    heartbeatUrl: values.heartbeatUrl.trim(),
+    heartbeatUrl: secretPayload(values.heartbeatUrl),
     notifyRecovery: values.notifyRecovery,
   };
 }
@@ -274,16 +274,17 @@ function NotificationsForm({ saved }: { saved: Notifications }) {
           <CardDescription>{t("heartbeatDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6">
-          <TextField
+          {/* The URL is the monitor's credential: whoever has it can send pings. */}
+          <SecretField
             id="heartbeat-url"
             label={t("heartbeatUrl")}
-            hint={t("heartbeatUrlHint")}
-            // The URL is the monitor's credential: whoever has it can send pings.
-            type="password"
-            autoComplete="off"
-            placeholder="https://hc-ping.com/…"
+            stored={saved.heartbeatUrlHint !== null}
+            hint={saved.heartbeatUrlHint}
             value={values.heartbeatUrl}
             onChange={set("heartbeatUrl")}
+            removable
+            placeholder="https://hc-ping.com/…"
+            description={t("heartbeatUrlHint")}
             error={errors["heartbeatUrl"]}
           />
           <div className="grid gap-1 text-sm">
@@ -307,7 +308,7 @@ function NotificationsForm({ saved }: { saved: Notifications }) {
               <Button
                 type="button"
                 variant="outline"
-                disabled={testHeartbeat.isPending || saved.heartbeatUrl === ""}
+                disabled={testHeartbeat.isPending || saved.heartbeatUrlHint === null}
                 onClick={() => runTest(testHeartbeat, setHeartbeatResult)}
               >
                 {testHeartbeat.isPending ? <Spinner /> : <HeartPulse />}

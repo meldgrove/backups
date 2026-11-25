@@ -67,7 +67,7 @@ router.get("/dashboard", async (c) => {
       link: "/settings/target",
     });
   }
-  if (!notifications.email.enabled && !notifications.heartbeatUrl) {
+  if (!notifications.email.enabled && !notifications.heartbeatUrlHint) {
     attention.push({
       level: "warning",
       message: "Nobody hears about failed backups: set up email alerts or a heartbeat.",

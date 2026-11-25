@@ -6,7 +6,8 @@ import { DEFAULT_RETENTION } from "@backups/shared/api/schedule";
 import { getDb } from "../db/client";
 import { runs, sources } from "../db/schema";
 import { createUser, request, resetDatabase, setUpTarget } from "../test/helpers";
-import { checkAlerts } from "./notify";
+import { readSetting, writeSetting } from "../core/settings";
+import { checkAlerts, NOTIFICATIONS_KEY, sealHeartbeatUrl } from "./notify";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
 
@@ -168,6 +169,59 @@ describe("alerts", () => {
       expect(hits).toHaveLength(1);
       const view = await request("GET", "/api/v1/notifications", { userId: admin.id });
       expect(view.body.heartbeat).toMatchObject({ ok: true, message: null });
+      expect(view.body.heartbeatUrlHint).toBe(`${new URL(url).origin}/…`);
+      expect(JSON.stringify(view.body)).not.toContain("ping/abc");
+    } finally {
+      server.close();
+    }
+  });
+
+  it("encrypts the heartbeat URL of 0.1.4 once, keeps it when it is left out, and drops it on null", async () => {
+    const admin = await createUser();
+    const hits: string[] = [];
+    const server = createServer((req, res) => {
+      hits.push(req.url ?? "");
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/ping/plain`;
+    const save = (heartbeatUrl?: string | null) =>
+      request("PUT", "/api/v1/notifications", {
+        userId: admin.id,
+        body: { email: { ...email, enabled: false }, heartbeatUrl, notifyRecovery: true },
+      });
+    const test = async () =>
+      (await request("POST", "/api/v1/notifications/test-heartbeat", { userId: admin.id, body: {} })).body;
+    const stored = async () => JSON.stringify(await readSetting(getDb(), NOTIFICATIONS_KEY));
+    try {
+      await save("");
+      const plain = await readSetting<Record<string, unknown>>(getDb(), NOTIFICATIONS_KEY);
+      await writeSetting(getDb(), NOTIFICATIONS_KEY, { ...plain, heartbeatUrl: url });
+      // Before the worker encrypted it, it works and is not shown.
+      expect(await test()).toMatchObject({ ok: true });
+      const view = await request("GET", "/api/v1/notifications", { userId: admin.id });
+      expect(JSON.stringify(view.body)).not.toContain("ping/plain");
+      // Two workers that start, and a save that keeps the URL, at the same time.
+      await Promise.all([sealHeartbeatUrl(getDb()), save(), sealHeartbeatUrl(getDb())]);
+      const sealed = await stored();
+      expect(sealed).toMatch(/"heartbeatUrl":"v1:/);
+      expect(sealed).not.toContain("ping/plain");
+      await sealHeartbeatUrl(getDb());
+      expect(await stored()).toBe(sealed);
+      expect((await save()).body).toMatchObject({ heartbeatUrlHint: `${new URL(url).origin}/…` });
+      expect(await test()).toMatchObject({ ok: true });
+      expect(hits).toEqual(["/ping/plain", "/ping/plain"]);
+
+      // Encrypted with another ENCRYPTION_KEY: said, not called.
+      const value = await readSetting<Record<string, unknown>>(getDb(), NOTIFICATIONS_KEY);
+      await writeSetting(getDb(), NOTIFICATIONS_KEY, { ...value, heartbeatUrl: "v1:AAAA:AAAA:AAAA" });
+      expect(await test()).toMatchObject({ ok: false, message: expect.stringContaining("enter it again") });
+      const unreadable = await request("GET", "/api/v1/notifications", { userId: admin.id });
+      expect(unreadable.body.heartbeatUrlHint).toBe("…");
+
+      expect((await save(null)).body).toMatchObject({ heartbeatUrlHint: null });
+      expect(await test()).toEqual({ ok: false, message: "Set a heartbeat URL first" });
+      expect(hits).toHaveLength(2);
     } finally {
       server.close();
     }

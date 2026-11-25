@@ -14,32 +14,6 @@ import type { Setting } from "./settings";
 
 const TEST_USAGE = "cli settings test notifications --email|--heartbeat";
 
-/** Only the heartbeat URL's host: its path is its secret. */
-function host(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return "set";
-  }
-}
-
-/**
- * What `show` prints: the page's read, with only the heartbeat URL's origin
- * as its hint (its path and query authorize the pings).
- */
-async function view() {
-  const { heartbeatUrl, ...rest } = await notificationsView(getDb());
-  let hint: string | null = null;
-  if (heartbeatUrl) {
-    try {
-      hint = `${new URL(heartbeatUrl).origin}/…`;
-    } catch {
-      hint = "…";
-    }
-  }
-  return { ...rest, heartbeatUrlHint: hint };
-}
-
 /** `notifications`: alert emails and the heartbeat (Notifications page, PUT /api/v1/notifications). */
 export const notifications: Setting = {
   name: "notifications",
@@ -49,26 +23,21 @@ export const notifications: Setting = {
     const db = getDb();
     if (!(await readSetting(db, NOTIFICATIONS_KEY)))
       return [{ name: "notifications", state: "not set", hints: [] }];
-    const { email, heartbeatUrl } = await notificationsView(db);
+    const { email, heartbeatUrlHint } = await notificationsView(db);
     const complete = Boolean(email.host && email.from && email.recipients.length > 0);
     const hints = [email.enabled ? "email on" : "email off"];
     if (email.host) hints.push(`server ${email.host}:${email.port}`);
     if (email.from) hints.push(`from ${email.from}`);
     hints.push(`${email.recipients.length} recipient${email.recipients.length === 1 ? "" : "s"}`);
     if (email.passwordHint) hints.push(`password ${email.passwordHint}`);
-    hints.push(heartbeatUrl ? `heartbeat ${host(heartbeatUrl)}` : "no heartbeat");
+    hints.push(heartbeatUrlHint ? `heartbeat ${heartbeatUrlHint}` : "no heartbeat");
     return [{ name: "notifications", state: email.enabled && !complete ? "incomplete" : "set", hints }];
   },
-  show: () => view(),
+  show: () => notificationsView(getDb()),
   async apply(actor, body) {
     const db = getDb();
-    // As a secret: a body without heartbeatUrl keeps the saved one; "" turns the heartbeat off.
-    const value: unknown = JSON.parse(body);
-    if (value && typeof value === "object" && !Array.isArray(value) && !("heartbeatUrl" in value)) {
-      Object.assign(value, { heartbeatUrl: (await notificationsView(db)).heartbeatUrl });
-    }
-    await saveNotifications(db, parseWith(notificationsInputSchema, value), actor);
-    return { json: await view() };
+    await saveNotifications(db, parseWith(notificationsInputSchema, JSON.parse(body)), actor);
+    return { json: await notificationsView(db) };
   },
   testOptions: { options: { email: { type: "boolean" }, heartbeat: { type: "boolean" } }, usage: TEST_USAGE },
   async test(actor, _id, { email, heartbeat }) {
