@@ -55,8 +55,9 @@ jobs:
       title: Meldgrove Backups
       description: "Self-hosted backups of what an organization cannot lose: every Meldgrove app (through its backup agent), Google Drive and Personio, encrypted and deduplicated with restic into S3-compatible storage such as Hetzner Object Storage. Dashboard, schedules, retention, alerts and a recovery kit."
       # Releases upload their source maps to this Sentry project, with the
-      # SENTRY_AUTH_TOKEN secret (an organization token).
-      sentry_org: meldgrove
+      # SENTRY_AUTH_TOKEN secret (an organization token). The organization's
+      # ID, not its slug: a renamed slug stops resolving, the ID does not.
+      sentry_org: "4511987937705984"
       sentry_project: backups
     secrets:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
